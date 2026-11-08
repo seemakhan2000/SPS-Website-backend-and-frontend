@@ -127,101 +127,102 @@ export default function ClientsMarqueeEditor({
   };
 
   /*UPLOAD LOGO*/
+/* UPLOAD CUSTOMER LOGO TO CLOUDINARY */
+const uploadLogo = async (
+  file: File,
+  index: number
+) => {
+  try {
+    setUploadingIndex(index);
 
-  const uploadLogo = async (
-    file: File,
-    index: number
-  ) => {
-    try {
-      setUploadingIndex(index);
+    const formData = new FormData();
 
-      const formData = new FormData();
+    formData.append("type", "client-logo");
+    formData.append("file", file);
 
-      formData.append(
-        "type",
-        "client-logo"
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
+
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
-
-      formData.append(
-        "file",
-        file
-      );
-
-      const response =
-        await apiFetch<{
-          message: string;
-          file: {
-            path: string;
-          };
-        }>("/uploads", {
-          method: "POST",
-          body: formData,
-        });
-
-      updateClient(
-        index,
-        "logo",
-        response.file.path
-      );
-
-     toast.success("Updated successfully.");
-    } catch (error) {
-      console.error(
-        "Customer logo upload error:",
-        error
-      );
-
-    toast.error("Failed to update.");
-    } finally {
-      setUploadingIndex(null);
-    }
-  };
-
-  /*DELETE LOGO FILE */
-  const deleteLogo = async (
-    index: number
-  ) => {
-    const logo =
-      form.clients[index]?.logo;
-
-    if (!logo) {
-      return;
     }
 
-    const confirmDelete =
-      window.confirm(
-        "Are you sure you want to delete this logo?"
-      );
+    // Update logo preview
+    updateClient(
+      index,
+      "logo",
+      imageUrl
+    );
 
-    if (!confirmDelete) {
-      return;
-    }
+    toast.success(
+      "Customer logo uploaded successfully."
+    );
+  } catch (error) {
+    console.error(
+      "Customer logo upload error:",
+      error
+    );
 
-    try {
-      await apiFetch("/uploads", {
-        method: "DELETE",
-        body: JSON.stringify({
-          filePath: logo,
-        }),
-      });
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Customer logo upload failed."
+    );
+  } finally {
+    setUploadingIndex(null);
+  }
+};
 
-      updateClient(
-        index,
-        "logo",
-        ""
-      );
+  /* DELETE CUSTOMER LOGO */
+const deleteLogo = async (
+  index: number
+) => {
+  const logo = form.clients[index]?.logo;
 
-     toast.success("Deleted successfully.");
-    } catch (error) {
-      console.error(
-        "Delete customer logo error:",
-        error
-      );
+  if (!logo) {
+    return;
+  }
 
-      toast.error("Failed to delete.");
-    }
-  };
+  const confirmDelete = window.confirm(
+    "Are you sure you want to remove this logo?"
+  );
 
+  if (!confirmDelete) {
+    return;
+  }
+
+  updateClient(
+    index,
+    "logo",
+    ""
+  );
+
+  toast.success(
+    "Customer logo removed successfully."
+  );
+};
   /*SAVE CHANGES TO DB */
 
   const saveChanges = async () => {

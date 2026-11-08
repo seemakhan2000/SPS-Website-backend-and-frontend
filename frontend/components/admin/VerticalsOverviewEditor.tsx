@@ -180,119 +180,106 @@ export default function VerticalsOverviewEditor({
       };
     });
   };
+/* UPLOAD VERTICAL IMAGE TO CLOUDINARY */
+const uploadImage = async (
+  file: File,
+  index: number
+) => {
+  try {
+    setUploadingIndex(index);
 
-  const uploadImage = async (
-    file: File,
-    index: number
-  ) => {
-    try {
-      setUploadingIndex(index);
+    const formData = new FormData();
 
-      const formData =
-        new FormData();
+    formData.append("type", "vertical-image");
+    formData.append("file", file);
 
-      formData.append(
-        "type",
-        "vertical-image"
-      );
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
 
-      formData.append(
-        "file",
-        file
-      );
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
 
-      const response =
-        await apiFetch<{
-          message: string;
-          file: {
-            path: string;
-          };
-        }>("/uploads", {
-          method: "POST",
-          body: formData,
-        });
-
-      updateVertical(
-        index,
-        "image",
-        response.file.path
-      );
-
-      toast.success(
-        "Vertical image uploaded successfully."
-      );
-    } catch (error) {
-      console.error(
-        "Vertical image upload error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Vertical image upload failed."
-      );
-    } finally {
-      setUploadingIndex(null);
-    }
-  };
-
-  const deleteImage = async (
-    index: number
-  ) => {
-    if (!form) {
-      return;
-    }
-
-    const image =
-      form.verticals[index]?.image;
-
-    if (!image) {
-      return;
-    }
-
-    const confirmDelete =
-      window.confirm(
-        "Are you sure you want to delete this image?"
-      );
-
-    if (!confirmDelete) {
-      return;
-    }
-
-    try {
-      await apiFetch(
-        "/uploads",
-        {
-          method: "DELETE",
-          body: JSON.stringify({
-            filePath: image,
-          }),
-        }
-      );
-
-      updateVertical(
-        index,
-        "image",
-        ""
-      );
-
-      toast.success(
-        "Vertical image deleted successfully."
-      );
-    } catch (error) {
-      console.error(
-        "Delete vertical image error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to delete vertical image."
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
     }
-  };
+
+    // Update vertical image
+    updateVertical(
+      index,
+      "image",
+      imageUrl
+    );
+
+    toast.success(
+      "Vertical image uploaded successfully."
+    );
+  } catch (error) {
+    console.error(
+      "Vertical image upload error:",
+      error
+    );
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Vertical image upload failed."
+    );
+  } finally {
+    setUploadingIndex(null);
+  }
+};
+/* REMOVE VERTICAL IMAGE */
+const deleteImage = async (
+  index: number
+) => {
+  if (!form) {
+    return;
+  }
+
+  const image = form.verticals[index]?.image;
+
+  if (!image) {
+    return;
+  }
+
+  const confirmDelete = window.confirm(
+    "Are you sure you want to remove this image?"
+  );
+
+  if (!confirmDelete) {
+    return;
+  }
+
+  // Remove image from editor state
+  updateVertical(
+    index,
+    "image",
+    ""
+  );
+
+  toast.success(
+    "Vertical image removed successfully."
+  );
+};
 
   const saveChanges = async () => {
     if (!form) {

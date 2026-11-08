@@ -81,49 +81,72 @@ export default function CustomersEditor({
       [field]: value,
     }));
   };
+/* UPLOAD CUSTOMER IMAGE */
+const uploadImage = async (
+  file: File,
+  type: string,
+  callback: (path: string) => void
+) => {
+  try {
+    setUploading(type);
 
-  const uploadImage = async (
-    file: File,
-    type: string,
-    callback: (path: string) => void
-  ) => {
-    try {
-      setUploading(type);
+    const formData = new FormData();
 
-      const formData = new FormData();
+    formData.append("type", type);
+    formData.append("file", file);
 
-      formData.append("type", type);
-      formData.append("file", file);
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
 
-      const response = await apiFetch<{
-        message: string;
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
 
-        file: {
-          path: string;
-          originalName?: string;
-          fileName?: string;
-          mimeType?: string;
-          size?: number;
-        };
-      }>("/uploads", {
-        method: "POST",
-        body: formData,
-      });
-
-      callback(response.file.path);
-
-     toast.success("Updated successfully.");
-    } catch (error) {
-      console.error(
-        "Customer image upload error:",
-        error
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
-
-     toast.error("Failed to update.");
-    } finally {
-      setUploading(null);
     }
-  };
+
+    // Update image in form
+    callback(imageUrl);
+
+    toast.success(
+      "Image uploaded successfully."
+    );
+
+  } catch (error) {
+    console.error(
+      "Customer image upload error:",
+      error
+    );
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Image upload failed."
+    );
+
+  } finally {
+    setUploading(null);
+  }
+};
 
   const deleteImage = async (
     imagePath: string,

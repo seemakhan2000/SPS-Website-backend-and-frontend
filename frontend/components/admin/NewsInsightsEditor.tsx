@@ -164,63 +164,73 @@ export default function NewsInsightsEditor({
     }));
   };
 
-  /*UPLOAD IMAGE*/
+ /* UPLOAD NEWS IMAGE TO CLOUDINARY */
+const uploadImage = async (
+  file: File,
+  index: number
+) => {
+  try {
+    setUploadingIndex(index);
 
-  const uploadImage = async (
-    file: File,
-    index: number
-  ) => {
-    try {
-      setUploadingIndex(index);
+    const formData = new FormData();
 
-      const formData = new FormData();
+    formData.append("type", "news-image");
+    formData.append("file", file);
 
-      formData.append(
-        "type",
-        "news-image"
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
+
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
-
-      formData.append(
-        "file",
-        file
-      );
-
-      const response =
-        await apiFetch<{
-          message: string;
-          file: {
-            path: string;
-          };
-        }>("/uploads", {
-          method: "POST",
-          body: formData,
-        });
-
-      updateItem(
-        index,
-        "image",
-        response.file.path
-      );
-
-      toast.success(
-        "News image uploaded successfully."
-      );
-    } catch (error) {
-      console.error(
-        "News image upload error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "News image upload failed."
-      );
-    } finally {
-      setUploadingIndex(null);
     }
-  };
 
+    // Update news image
+    updateItem(
+      index,
+      "image",
+      imageUrl
+    );
+
+    toast.success(
+      "News image uploaded successfully."
+    );
+  } catch (error) {
+    console.error(
+      "News image upload error:",
+      error
+    );
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "News image upload failed."
+    );
+  } finally {
+    setUploadingIndex(null);
+  }
+};
   /*DELETE IMAGE*/
 
   const deleteImage = async (

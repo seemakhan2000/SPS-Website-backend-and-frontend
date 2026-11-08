@@ -1,151 +1,131 @@
-const fs = require("fs");
-const path = require("path");
+const cloudinary = require("../config/cloudinary");
 
+// CLOUDINARY FOLDER MAPPING
+const getUploadFolder = (type) => {
+  if (type === "hero-video") {
+    return "sps-enterprise/videos/hero";
+  }
 
+  if (type === "hero-image") {
+    return "sps-enterprise/images/hero";
+  }
+
+  if (
+    type === "about-big-image" ||
+    type === "about-small-image"
+  ) {
+    return "sps-enterprise/images/about";
+  }
+
+  if (type === "startup-logo") {
+    return "sps-enterprise/images/startups";
+  }
+
+  if (
+    type === "customers-main-image" ||
+    type === "customers-testimonial-image" ||
+    type === "customers-impact-image" ||
+    type.startsWith("customers-avatar-")
+  ) {
+    return "sps-enterprise/images/customers";
+  }
+
+  const folders = {
+    "howitworks-image": "howitworks",
+    "technology-partner-image": "technology-partners",
+    "highlights-image": "highlights",
+    "client-logo": "clients",
+    "news-image": "news",
+    "vertical-image": "verticals",
+  };
+
+  if (folders[type]) {
+    return `sps-enterprise/images/${folders[type]}`;
+  }
+
+  return null;
+};
+// CLOUDINARY UPLOAD
+const uploadToCloudinary = (file, folder, isVideo) => {
+  return new Promise((resolve, reject) => {
+    const options = {
+      folder,
+      resource_type: isVideo ? "video" : "image",
+      timeout: 120000,
+      ...(isVideo
+        ? {
+            chunk_size: 6000000,
+            eager_async: false,
+          }
+        : {}),
+    };
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      options,
+      (error, result) => {
+        if (error) {
+          console.error("Cloudinary detailed error:", error);
+          return reject(error);
+        }
+
+        resolve(result);
+      }
+    );
+
+    uploadStream.on("error", reject);
+
+    uploadStream.end(file.buffer);
+  });
+};
 // UPLOAD FILE
 const uploadFile = async (req, res) => {
   try {
-
-    // CHECK FILE
     if (!req.file) {
       return res.status(400).json({
         message: "No file uploaded",
       });
     }
 
-    const file = req.file;
-    const type = req.body.type;
+    const { type } = req.body;
 
-    let fileUrl = "";
+    const folder = getUploadFolder(type);
 
-
-
-    // HERO VIDEO
-    if (type === "hero-video") {
-      fileUrl = `/uploads/videos/hero/${file.filename}`;
-    }
-
-
-    // HERO IMAGE
-    else if (type === "hero-image") {
-      fileUrl = `/uploads/images/hero/${file.filename}`;
-    }
-
-
-    // ABOUT BIG IMAGE
-    else if (type === "about-big-image") {
-      fileUrl = `/uploads/images/about/${file.filename}`;
-    }
-
-
-    // ABOUT SMALL IMAGE
-    else if (type === "about-small-image") {
-      fileUrl = `/uploads/images/about/${file.filename}`;
-    }
-
-
-    // STARTUP LOGO
-    else if (type === "startup-logo") {
-      fileUrl = `/uploads/images/startups/${file.filename}`;
-    }
-
-
-    // CUSTOMERS MAIN IMAGE
-    else if (type === "customers-main-image") {
-      fileUrl = `/uploads/images/customers/${file.filename}`;
-    }
-
-
-    // CUSTOMERS TESTIMONIAL IMAGE
-    else if (type === "customers-testimonial-image") {
-      fileUrl = `/uploads/images/customers/${file.filename}`;
-    }
-
-
-    // CUSTOMERS IMPACT IMAGE
-    else if (type === "customers-impact-image") {
-      fileUrl = `/uploads/images/customers/${file.filename}`;
-    }
-
-
-    // CUSTOMERS AVATAR
-    else if (
-      typeof type === "string" &&
-      type.startsWith("customers-avatar-")
-    ) {
-      fileUrl = `/uploads/images/customers/${file.filename}`;
-    }
-
-
-    // HOW IT WORKS IMAGE
-    else if (type === "howitworks-image") {
-      fileUrl = `/uploads/images/howitworks/${file.filename}`;
-    }
-
-
-    // TECHNOLOGY PARTNER IMAGE
-    else if (type === "technology-partner-image") {
-      fileUrl =
-        `/uploads/images/technology-partners/${file.filename}`;
-    }
-
-
-    // HIGHLIGHTS IMAGE
-    else if (type === "highlights-image") {
-      fileUrl =
-        `/uploads/images/highlights/${file.filename}`;
-    }
-
-
-    // CLIENT LOGO
-    else if (type === "client-logo") {
-      fileUrl = `/uploads/images/clients/${file.filename}`;
-    }
-
-
-    // NEWS IMAGE
-    else if (type === "news-image") {
-      fileUrl =
-        `/uploads/images/news/${file.filename}`;
-    }
-
-
-    // VERTICAL IMAGE
-    else if (type === "vertical-image") {
-      fileUrl =
-        `/uploads/images/verticals/${file.filename}`;
-    }
-
-    // INVALID TYPE
-    else {
-      console.error(
-        "Invalid upload type received:",
-        type
-      );
-
+    if (!folder) {
       return res.status(400).json({
         message: "Invalid upload type",
         receivedType: type,
       });
     }
 
+    const isVideo = type === "hero-video";
 
-    // SUCCESS RESPONSE
+    const result = await uploadToCloudinary(
+      req.file,
+      folder,
+      isVideo
+    );
+
     return res.status(200).json({
       message: "File uploaded successfully",
 
-      fileUrl,
+      fileUrl: result.secure_url,
+
+      publicId: result.public_id,
+
+      resourceType: result.resource_type,
 
       file: {
-        originalName: file.originalname,
-        fileName: file.filename,
-        mimeType: file.mimetype,
-        size: file.size,
-        path: fileUrl,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        url: result.secure_url,
+        publicId: result.public_id,
       },
     });
+
   } catch (error) {
-    console.error(error);
+    console.error("Cloudinary upload error:", error);
+
     return res.status(500).json({
       message: "File upload failed",
       error:
@@ -156,93 +136,48 @@ const uploadFile = async (req, res) => {
   }
 };
 
-
 // DELETE FILE
 const deleteFile = async (req, res) => {
   try {
-    const { filePath } = req.body;
-
-
-    // VALIDATE FILE PATH
-    if (!filePath) {
-      return res.status(400).json({
-        message: "File path is required",
-      });
-    }
+    const { publicId, resourceType } = req.body;
 
     if (
-      typeof filePath !== "string" ||
-      !filePath.startsWith("/uploads/")
+      !publicId ||
+      typeof publicId !== "string" ||
+      !publicId.startsWith("sps-enterprise/")
     ) {
       return res.status(400).json({
-        message: "Invalid file path",
+        message: "Invalid Cloudinary public ID",
       });
     }
 
-
-    // REMOVE /uploads/ FROM URL
-    const relativePath = filePath.replace(
-      /^\/uploads\//,
-      ""
-    );
-
-    // UPLOAD ROOT
-    const uploadRoot = path.join(
-      __dirname,
-      "../../uploads"
-    );
-
-
-    // BUILD ABSOLUTE PATH
-    const fullPath = path.join(
-      uploadRoot,
-      relativePath
-    );
-
-
-    // SECURITY CHECK
-    const normalizedRoot =
-      path.resolve(uploadRoot);
-
-    const normalizedFile =
-      path.resolve(fullPath);
-
-    if (
-      !normalizedFile.startsWith(
-        normalizedRoot + path.sep
-      )
-    ) {
+    if (!["image", "video"].includes(resourceType)) {
       return res.status(400).json({
-        message: "Invalid file path",
+        message: "Invalid resource type",
       });
     }
 
+    const result = await cloudinary.uploader.destroy(
+      publicId,
+      {
+        resource_type: resourceType,
+        invalidate: true,
+      }
+    );
 
-    // DELETE FILE
-    if (fs.existsSync(normalizedFile)) {
-      fs.unlinkSync(normalizedFile);
-
-      console.log(
-        "File deleted:",
-        normalizedFile
-      );
-    } else {
-      console.log(
-        "File does not exist:",
-        normalizedFile
-      );
+    if (result.result !== "ok" && result.result !== "not found") {
+      return res.status(400).json({
+        message: "Cloudinary file deletion failed",
+      });
     }
 
-
-    // SUCCESS
     return res.status(200).json({
       message: "File deleted successfully",
+      result: result.result,
     });
+
   } catch (error) {
-    console.error(
-      "Delete file error:",
-      error
-    );
+    console.error("Cloudinary delete error:", error);
 
     return res.status(500).json({
       message: "Failed to delete file",
@@ -250,8 +185,6 @@ const deleteFile = async (req, res) => {
   }
 };
 
-
-// EXPORT
 module.exports = {
   uploadFile,
   deleteFile,

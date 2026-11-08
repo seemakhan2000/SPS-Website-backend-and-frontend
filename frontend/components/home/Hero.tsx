@@ -157,31 +157,38 @@ export default function Hero() {
       {/*VIDEO BACKGROUND*/}
       <div className="absolute inset-0 w-full h-full">
 
-        <video
-          ref={videoRef}
-          key={currentSlide}
-          preload="metadata"
-          muted
-          playsInline
-          className="w-full h-full object-cover"
+       <video
+  ref={videoRef}
+  key={currentSlide}
+  src={getMediaUrl(currentSlideData.video)}
+  autoPlay
+  muted
+  loop={false}
+  playsInline
+  preload="auto"
+  className="w-full h-full object-cover"
+  onCanPlay={() => {
+    setIsVideoReady(true);
+  }}
+  onEnded={() => {
+    setCurrentSlide(
+      (prev) => (prev + 1) % slides.length
+    );
+  }}
+  onError={(e) => {
+    const video = e.currentTarget;
 
-          onEnded={() => {
-            setCurrentSlide(
-              (prev) => (prev + 1) % slides.length
-            );
-          }}
+    console.error("Hero video playback error:", {
+      src: video.currentSrc,
+      errorCode: video.error?.code,
+      errorMessage: video.error?.message,
+    });
 
-          onError={() => {
-            setIsVideoReady(false);
-          }}
-        >
-          <source
-            src={getMediaUrl(currentSlideData.video)}
-            type="video/webm"
-          />
-
-          Your browser does not support the video tag.
-        </video>
+    setIsVideoReady(false);
+  }}
+>
+  Your browser does not support the video tag.
+</video>
 
         {/* Overlay Gradient */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />

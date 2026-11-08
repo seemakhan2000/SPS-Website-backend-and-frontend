@@ -36,59 +36,72 @@ export default function AboutUsEditor({
   };
 
 
-  // Upload About Image
-  const uploadAboutImage = async (
-    file: File,
-    type: "about-big-image" | "about-small-image"
-  ) => {
-    try {
-      if (type === "about-big-image") {
-        setUploadingBigImage(true);
-      } else {
-        setUploadingSmallImage(true);
-      }
-
-      const formData = new FormData();
-
-
-      formData.append("type", type);
-
-      formData.append("file", file);
-
-      const response = await apiFetch<{
-        message: string;
-        file: {
-          path: string;
-        };
-      }>("/uploads", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (type === "about-big-image") {
-        updateField("bigImage", response.file.path);
-      } else {
-        updateField("smallImage", response.file.path);
-      }
-
-      toast.success("image uploaded successfully.");
-    } catch (error) {
-      console.error("Image upload error:", error);
-
-     toast.error(
-  error instanceof Error
-    ? error.message
-    : "image upload failed."
-);
-    } finally {
-      if (type === "about-big-image") {
-        setUploadingBigImage(false);
-      } else {
-        setUploadingSmallImage(false);
-      }
+  
+// Upload About Image
+const uploadAboutImage = async (
+  file: File,
+  type: "about-big-image" | "about-small-image"
+) => {
+  try {
+    if (type === "about-big-image") {
+      setUploadingBigImage(true);
+    } else {
+      setUploadingSmallImage(true);
     }
-  };
 
+    const formData = new FormData();
+
+    formData.append("type", type);
+    formData.append("file", file);
+
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    // Get Cloudinary image URL
+    const imageUrl = response.file?.url;
+
+    if (!imageUrl) {
+      throw new Error("Image URL not received from server.");
+    }
+
+    // Update image preview immediately
+    if (type === "about-big-image") {
+      updateField("bigImage", imageUrl);
+    } else {
+      updateField("smallImage", imageUrl);
+    }
+
+    toast.success("Image uploaded successfully.");
+  } catch (error) {
+    console.error("Image upload error:", error);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Image upload failed."
+    );
+  } finally {
+    if (type === "about-big-image") {
+      setUploadingBigImage(false);
+    } else {
+      setUploadingSmallImage(false);
+    }
+  }
+};
 
   // Delete Image
   const deleteImage = async (

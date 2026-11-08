@@ -121,7 +121,6 @@ const createHeroSlides = async (
   );
 };
 
-
 // UPDATE HERO SLIDES
 const updateHeroSlides = async (
   siteContentId,
@@ -132,8 +131,19 @@ const updateHeroSlides = async (
     throw new Error("Hero slides data is required");
   }
 
+  const [existingRows] = await db.query(
+    `
+    SELECT id
+    FROM hero_slides
+    WHERE site_content_id = ?
+    `,
+    [siteContentId]
+  );
 
-  // Update each existing slide using its existing ID
+  if (existingRows.length === 0) {
+    throw new Error("Hero slides not found");
+  }
+
   for (const slide of heroSlides) {
     if (!slide.id) {
       throw new Error("Hero slide ID is required");
@@ -173,84 +183,8 @@ const updateHeroSlides = async (
     }
   }
 
-
-  // Return updated slides
-  return getHeroSlides(
-    siteContentId,
-    db
-  );
-
-
-
-  // Check existing hero slides
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM hero_slides
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
-
-
-  // Do NOT automatically create
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Hero slides not found"
-    );
-  }
-
-
-  // Delete existing slides
-  await db.query(
-    `
-    DELETE FROM hero_slides
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
-
-
-  // Insert updated slides
-  for (const slide of heroSlides) {
-    await db.query(
-      `
-      INSERT INTO hero_slides
-      (
-        video,
-        title,
-        subtitle,
-        description,
-        button_text,
-        button_link,
-        is_list,
-        site_content_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        slide.video,
-        slide.title,
-        slide.subtitle,
-        JSON.stringify(slide.description),
-        slide.buttonText,
-        slide.buttonLink,
-        Boolean(slide.isList),
-        siteContentId,
-      ]
-    );
-  }
-
-
-  // Return updated DB data
-  return getHeroSlides(
-    siteContentId,
-    db
-  );
+  return getHeroSlides(siteContentId, db);
 };
-
 
 // DELETE HERO SLIDES
 const deleteHeroSlides = async (

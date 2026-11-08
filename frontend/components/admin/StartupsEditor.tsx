@@ -104,61 +104,56 @@ export default function StartupsEditor({
       );
     });
   };
+const uploadStartupLogo = async (
+  file: File,
+  index: number
+) => {
+  try {
+    setUploadingLogo(index);
 
-  const uploadStartupLogo = async (
-    file: File,
-    index: number
-  ) => {
-    try {
-      setUploadingLogo(index);
+    const formData = new FormData();
 
-      const formData = new FormData();
+    formData.append("type", "startup-logo");
+    formData.append("file", file);
 
-      formData.append(
-        "type",
-        "startup-logo"
-      );
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        originalName: string;
+        mimeType: string;
+        size: number;
+        url: string;
+        publicId: string;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
 
-      formData.append(
-        "file",
-        file
-      );
+    const uploadedUrl = response.file?.url;
 
-      const response =
-        await apiFetch<{
-          message: string;
-          file: {
-            path: string;
-          };
-        }>("/uploads", {
-          method: "POST",
-          body: formData,
-        });
-
-      updateStartup(
-        index,
-        "logo",
-        response.file.path
-      );
-
-      toast.success(
-        "Logo uploaded successfully."
-      );
-    } catch (error) {
-      console.error(
-        "Startup logo upload error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Logo upload failed."
-      );
-    } finally {
-      setUploadingLogo(null);
+    if (!uploadedUrl) {
+      throw new Error("Cloudinary image URL not received.");
     }
-  };
+
+    updateStartup(index, "logo", uploadedUrl);
+
+    toast.success("Logo uploaded successfully.");
+  } catch (error) {
+    console.error("Startup logo upload error:", error);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Logo upload failed."
+    );
+  } finally {
+    setUploadingLogo(null);
+  }
+};
 
   const deleteStartupLogo = async (
     index: number

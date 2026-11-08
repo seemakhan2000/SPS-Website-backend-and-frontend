@@ -153,10 +153,10 @@ export default function Footer() {
           <div className="lg:col-span-1">
             <div className="mb-4 flex items-center">
               <Image
-                src="/images/logo/logo-footer.webp"
+                src="/images/logo-400.webp"
                 alt="Software Productivity Strategists, Inc."
-                width={180}
-                height={60}
+                width={250}
+                height={250}
                 className="h-auto w-40 flex-shrink-0 object-contain"
               />
             </div>
@@ -189,7 +189,7 @@ export default function Footer() {
                     {/* Avatar */}
                     <div className="absolute left-0 -top-8 flex h-14 w-14 items-center justify-center rounded-2xl rounded-br-none bg-white p-2 shadow-lg">
                       <Image
-                        src="/images/logo/men.webp"
+                        src="/images/men-80.webp"
                         alt="Farhan Akmal"
                         width={50}
                         height={50}

@@ -92,59 +92,84 @@ export default function HeroEditor({
   // =========================
   // Upload Hero Video
   // =========================
-  const uploadVideo = async (
-    slideIndex: number,
-    file: File
-  ) => {
-    try {
-      setUploadingVideo(slideIndex);
+// Upload Hero Video
+// =========================
+const uploadVideo = async (
+  slideIndex: number,
+  file: File
+) => {
+  try {
+    // Validate video format
+    const allowedTypes = [
+      "video/mp4",
+      "video/webm",
+      "video/ogg",
+      "video/quicktime",
+    ];
 
-      const formData = new FormData();
-
-      formData.append(
-        "type",
-        "hero-video"
-      );
-
-      formData.append(
-        "file",
-        file
-      );
-
-      const response = await apiFetch<{
-        message: string;
-        file: {
-          path: string;
-        };
-      }>("/uploads", {
-        method: "POST",
-        body: formData,
-      });
-
-      updateSlide(
-        slideIndex,
-        "video",
-        response.file.path
-      );
-
-      toast.success(
-        "Hero video uploaded successfully."
-      );
-    } catch (error) {
-      console.error(
-        "Video upload error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Video upload failed."
-      );
-    } finally {
-      setUploadingVideo(null);
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Only MP4, WebM, OGG and MOV videos are allowed.");
+      return;
     }
-  };
+
+    // Validate file size (100MB)
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error("Video size must not exceed 100MB.");
+      return;
+    }
+
+    setUploadingVideo(slideIndex);
+
+    const formData = new FormData();
+
+    formData.append("type", "hero-video");
+    formData.append("file", file);
+
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    // Use Cloudinary secure URL
+    const videoUrl = response.file.url;
+
+    if (!videoUrl) {
+      throw new Error("Cloudinary video URL not received.");
+    }
+
+    updateSlide(
+      slideIndex,
+      "video",
+      videoUrl
+    );
+
+    toast.success("Hero video uploaded successfully.");
+
+  } catch (error) {
+    console.error("Video upload error:", error);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Video upload failed."
+    );
+
+  } finally {
+    setUploadingVideo(null);
+  }
+};
 
   // =========================
   // Delete Hero Video

@@ -172,85 +172,87 @@ export default function TechnologyPartnersEditor({
       };
     });
   };
+/* UPLOAD TECHNOLOGY PARTNER IMAGE */
+const uploadPartnerImage = async (
+  index: number,
+  file: File
+) => {
+  try {
+    setUploadingIndex(index);
 
+    const formData = new FormData();
 
-  const uploadPartnerImage = async (
-    index: number,
-    file: File
-  ) => {
-    try {
-      setUploadingIndex(index);
+    formData.append("type", "technology-partner-image");
+    formData.append("file", file);
 
-      const formData =
-        new FormData();
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
 
+    // Get Cloudinary URL
+    const imageUrl = response.file?.url;
 
-
-      formData.append(
-        "type",
-        "technology-partner-image"
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
-
-      formData.append(
-        "file",
-        file
-      );
-
-      const result =
-        await apiFetch<{
-          fileUrl: string;
-        }>(
-          "/uploads",
-          {
-            method: "POST",
-
-            body: formData,
-          }
-        );
-
-
-
-      setForm((previous) => {
-        if (!previous) {
-          return previous;
-        }
-
-        const partners = [
-          ...previous.partners,
-        ];
-
-        if (!partners[index]) {
-          return previous;
-        }
-
-        partners[index] = {
-          ...partners[index],
-
-          image:
-            result.fileUrl,
-        };
-
-        return {
-          ...previous,
-
-          partners,
-        };
-      });
-    } catch (error) {
-      console.error(
-        "Partner image upload error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to upload partner image."
-      );
-    } finally {
-      setUploadingIndex(null);
     }
-  };
+
+    // Update image preview
+    setForm((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const partners = [...previous.partners];
+
+      if (!partners[index]) {
+        return previous;
+      }
+
+      partners[index] = {
+        ...partners[index],
+        image: imageUrl,
+      };
+
+      return {
+        ...previous,
+        partners,
+      };
+    });
+
+    toast.success("Partner image uploaded successfully.");
+  } catch (error) {
+    console.error(
+      "Partner image upload error:",
+      error
+    );
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Failed to upload partner image."
+    );
+  } finally {
+    setUploadingIndex(null);
+  }
+};
 
 
 

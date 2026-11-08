@@ -1,3 +1,4 @@
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "http://localhost:5000/api";
@@ -8,8 +9,7 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const url = `${API_URL}${endpoint}`;
 
-  const isFormData =
-    options.body instanceof FormData;
+  const isFormData = options.body instanceof FormData;
 
   const response = await fetch(url, {
     ...options,
@@ -50,27 +50,22 @@ export async function apiFetch<T>(
   return data;
 }
 
-export function getMediaUrl(filePath: string) {
-  if (!filePath) {
-    return "";
-  }
+export function getMediaUrl(
+  filePath: string | null | undefined
+) {
+  if (!filePath) return "";
 
-  // Already a complete URL
-  if (
-    filePath.startsWith("http://") ||
-    filePath.startsWith("https://")
-  ) {
+  // Cloudinary or any complete HTTP/HTTPS URL
+  if (/^https?:\/\//i.test(filePath)) {
     return filePath;
   }
 
   // Uploaded CMS files → Backend
   if (filePath.startsWith("/uploads/")) {
-    const backendUrl =
-      API_URL.replace(/\/api\/?$/, "");
-
+    const backendUrl = API_URL.replace(/\/api\/?$/, "");
     return `${backendUrl}${filePath}`;
   }
 
-  // Frontend public assets → Frontend
+  // Frontend public assets
   return filePath;
 }

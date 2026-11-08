@@ -117,76 +117,69 @@ export default function ContactCTAEditor({
   };
 
   /*UPLOAD CTA IMAGE*/
-  const uploadImage = async (file: File) => {
-    try {
-      setUploadingImage(true);
+ /* UPLOAD CTA IMAGE */
+const uploadImage = async (file: File) => {
+  try {
+    setUploadingImage(true);
 
-      const formData = new FormData();
+    const formData = new FormData();
 
-      formData.append("type", "about-big-image");
-      formData.append("file", file);
+    formData.append("type", "about-big-image");
+    formData.append("file", file);
 
-      const response = await apiFetch<{
-        message: string;
-        file: {
-          path: string;
-        };
-      }>("/uploads", {
-        method: "POST",
-        body: formData,
-      });
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
 
-      updateField("image", response.file.path);
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
 
-     toast.success("Updated successfully.");
-    } catch (error) {
-      console.error(
-        "Contact CTA image upload error:",
-        error
-      );
-
-    toast.error("Failed to update.");
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-  /*DELETE CTA IMAGE*/
-  const deleteImage = async () => {
-    if (!form?.image) {
-      return;
+    if (!imageUrl || !imageUrl.startsWith("https://")) {
+      throw new Error("Valid Cloudinary image URL not received.");
     }
 
-    const imagePath = form.image;
+    // Update CTA image
+    updateField("image", imageUrl);
 
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this image?"
+    toast.success("Image uploaded successfully.");
+  } catch (error) {
+    console.error("Contact CTA image upload error:", error);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Image upload failed."
     );
-
-    if (!confirmDelete) {
-      return;
-    }
-
-    try {
-      await apiFetch("/uploads", {
-        method: "DELETE",
-        body: JSON.stringify({
-          filePath: imagePath,
-        }),
-      });
-      updateField("image", "");
-
-      toast.success("Deleted successfully.");
-    } catch (error) {
-      console.error(
-        "Delete CTA image error:",
-        error
-      );
-
-      toast.error("Failed to delete.");
-    }
-  };
-
+  } finally {
+    setUploadingImage(false);
+  }
+};
   /*SAVE CONTACT CTA */
+/* DELETE CTA IMAGE */
+const deleteImage = () => {
+  const confirmDelete = window.confirm(
+    "Are you sure you want to delete the Contact CTA image?"
+  );
+
+  if (!confirmDelete) return;
+
+  updateField("image", "");
+
+  toast.success("Image removed successfully.");
+};
 
   const saveChanges = async () => {
     if (!form) {

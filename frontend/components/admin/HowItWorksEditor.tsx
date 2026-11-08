@@ -218,61 +218,63 @@ export default function HowItWorksEditor({
   };
 
   /* UPLOAD IMAGE*/
+const uploadImage = async (file: File) => {
+  try {
+    setUploadingImage(true);
 
-  const uploadImage = async (
-    file: File
-  ) => {
-    try {
-      setUploadingImage(true);
+    const formData = new FormData();
 
-      const formData =
-        new FormData();
+    formData.append("type", "howitworks-image");
+    formData.append("file", file);
 
-      formData.append(
-        "type",
-        "howitworks-image"
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
+
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
-
-      formData.append(
-        "file",
-        file
-      );
-
-      const response =
-        await apiFetch<{
-          message: string;
-
-          file: {
-            path: string;
-          };
-        }>("/uploads", {
-          method: "POST",
-          body: formData,
-        });
-
-      updateField(
-        "image",
-        response.file.path
-      ); 
-      toast.success(
-        "Image uploaded successfully."
-      );
-    } catch (error) {
-      console.error(
-        "How It Works image upload error:",
-        error
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Image upload failed."
-      );
-    } finally {
-      setUploadingImage(false);
     }
-  };
 
+    // Update image preview
+    updateField("image", imageUrl);
+
+    toast.success("Image uploaded successfully.");
+  } catch (error) {
+    console.error(
+      "How It Works image upload error:",
+      error
+    );
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Image upload failed."
+    );
+  } finally {
+    setUploadingImage(false);
+  }
+};
   /*DELETE IMAGE*/
 
   const deleteImage = async () => {

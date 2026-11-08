@@ -37,45 +37,66 @@ export default function HighlightsEditor({
     }));
   };
 
+/* UPLOAD HIGHLIGHTS IMAGE */
+const uploadImage = async (file: File) => {
+  try {
+    setUploading(true);
 
-  const uploadImage = async (file: File) => {
-    try {
-      setUploading(true);
+    const formData = new FormData();
 
-      const formData = new FormData();
+    formData.append("type", "highlights-image");
+    formData.append("file", file);
 
-      formData.append("type", "highlights-image");
-      formData.append("file", file);
+    const response = await apiFetch<{
+      message: string;
+      fileUrl: string;
+      publicId: string;
+      resourceType: string;
+      file: {
+        url: string;
+        publicId: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+      };
+    }>("/uploads", {
+      method: "POST",
+      body: formData,
+    });
 
-      const response = await apiFetch<{
-        message: string;
-        file: {
-          path: string;
-        };
-      }>("/uploads", {
-        method: "POST",
-        body: formData,
-      });
+    // Get Cloudinary secure URL
+    const imageUrl = response.file?.url;
 
-      updateField("image", response.file.path);
-
-      toast.success("Highlights image uploaded successfully.");
-    } catch (error) {
-      console.error(
-        "Highlights image upload error:",
-        error
+    if (
+      !imageUrl ||
+      !imageUrl.startsWith("https://")
+    ) {
+      throw new Error(
+        "Valid Cloudinary image URL not received."
       );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Image upload failed."
-      );
-    } finally {
-      setUploading(false);
     }
-  };
 
+    // Update image preview
+    updateField("image", imageUrl);
+
+    toast.success(
+      "Highlights image uploaded successfully."
+    );
+  } catch (error) {
+    console.error(
+      "Highlights image upload error:",
+      error
+    );
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Image upload failed."
+    );
+  } finally {
+    setUploading(false);
+  }
+};
 
   const deleteImage = async () => {
     if (!form.image) {
