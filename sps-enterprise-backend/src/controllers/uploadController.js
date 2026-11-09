@@ -1,6 +1,10 @@
+
 const cloudinary = require("../config/cloudinary");
 
+// ========================================
 // CLOUDINARY FOLDER MAPPING
+// ========================================
+
 const getUploadFolder = (type) => {
   if (type === "hero-video") {
     return "sps-enterprise/videos/hero";
@@ -45,13 +49,19 @@ const getUploadFolder = (type) => {
 
   return null;
 };
+
+
+// ========================================
 // CLOUDINARY UPLOAD
+// ========================================
+
 const uploadToCloudinary = (file, folder, isVideo) => {
   return new Promise((resolve, reject) => {
     const options = {
       folder,
       resource_type: isVideo ? "video" : "image",
       timeout: 120000,
+
       ...(isVideo
         ? {
             chunk_size: 6000000,
@@ -77,7 +87,12 @@ const uploadToCloudinary = (file, folder, isVideo) => {
     uploadStream.end(file.buffer);
   });
 };
+
+
+// ========================================
 // UPLOAD FILE
+// ========================================
+
 const uploadFile = async (req, res) => {
   try {
     if (!req.file) {
@@ -109,9 +124,7 @@ const uploadFile = async (req, res) => {
       message: "File uploaded successfully",
 
       fileUrl: result.secure_url,
-
       publicId: result.public_id,
-
       resourceType: result.resource_type,
 
       file: {
@@ -136,11 +149,101 @@ const uploadFile = async (req, res) => {
   }
 };
 
+
+// ========================================
+// EXTRACT CLOUDINARY PUBLIC ID FROM URL
+// ========================================
+
+const extractCloudinaryPublicId = (filePath) => {
+  try {
+    const url = new URL(filePath);
+
+    if (url.hostname !== "res.cloudinary.com") {
+      return null;
+    }
+
+    const resourceMatch = url.pathname.match(
+      /\/(video|image)\/upload\//
+    );
+
+    if (!resourceMatch) {
+      return null;
+    }
+
+    const resourceType = resourceMatch[1];
+
+    const uploadIndex = url.pathname.indexOf("/upload/");
+
+    let filePathAfterUpload = url.pathname.slice(
+      uploadIndex + "/upload/".length
+    );
+
+    const parts = filePathAfterUpload.split("/");
+
+    // Remove Cloudinary transformations if present
+    while (
+      parts.length > 0 &&
+      (
+        parts[0].includes(",") ||
+        parts[0].includes("_") && parts[0].includes(",") ||
+        /^q_|^f_|^w_|^h_|^c_|^e_/.test(parts[0])
+      )
+    ) {
+      parts.shift();
+    }
+
+    // Remove Cloudinary version
+    if (parts[0] && /^v\d+$/.test(parts[0])) {
+      parts.shift();
+    }
+
+    let publicId = parts.join("/");
+
+    // Remove file extension
+    publicId = publicId.replace(/\.[^/.]+$/, "");
+
+    if (!publicId.startsWith("sps-enterprise/")) {
+      return null;
+    }
+
+    return {
+      publicId,
+      resourceType,
+    };
+
+  } catch (error) {
+    return null;
+  }
+};
+
+
+// ========================================
 // DELETE FILE
+// ========================================
+
 const deleteFile = async (req, res) => {
   try {
-    const { publicId, resourceType } = req.body;
+    let {
+      publicId,
+      resourceType,
+      filePath,
+    } = req.body;
 
+    // Extract Public ID from existing Cloudinary URL
+    if (!publicId && filePath) {
+      const extracted = extractCloudinaryPublicId(filePath);
+
+      if (!extracted) {
+        return res.status(400).json({
+          message: "Invalid Cloudinary URL",
+        });
+      }
+
+      publicId = extracted.publicId;
+      resourceType = extracted.resourceType;
+    }
+
+    // Validate Public ID
     if (
       !publicId ||
       typeof publicId !== "string" ||
@@ -151,12 +254,14 @@ const deleteFile = async (req, res) => {
       });
     }
 
+    // Validate resource type
     if (!["image", "video"].includes(resourceType)) {
       return res.status(400).json({
         message: "Invalid resource type",
       });
     }
 
+    // Delete from Cloudinary
     const result = await cloudinary.uploader.destroy(
       publicId,
       {
@@ -165,7 +270,10 @@ const deleteFile = async (req, res) => {
       }
     );
 
-    if (result.result !== "ok" && result.result !== "not found") {
+    if (
+      result.result !== "ok" &&
+      result.result !== "not found"
+    ) {
       return res.status(400).json({
         message: "Cloudinary file deletion failed",
       });
@@ -173,6 +281,8 @@ const deleteFile = async (req, res) => {
 
     return res.status(200).json({
       message: "File deleted successfully",
+      publicId,
+      resourceType,
       result: result.result,
     });
 
@@ -184,6 +294,11 @@ const deleteFile = async (req, res) => {
     });
   }
 };
+
+
+// ========================================
+// EXPORT CONTROLLERS
+// ========================================
 
 module.exports = {
   uploadFile,

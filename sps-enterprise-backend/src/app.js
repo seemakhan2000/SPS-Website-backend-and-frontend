@@ -13,8 +13,11 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
+
   "https://sps-website-backend-and-frontend-dt.vercel.app",
   "https://sps-website-backend-and-frontend.vercel.app",
+
+  "https://sps-website-backend-and-frontend-dtk6-901ts8c3q.vercel.app",
 ];
 
 const corsOptions = {
