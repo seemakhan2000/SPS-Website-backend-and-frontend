@@ -1,49 +1,69 @@
-
 const { MongoClient } = require("mongodb");
 
 let client;
-let database;
+let db;
+let connectionPromise;
 
 const connectDB = async () => {
   try {
-    const mongoUrl = process.env.MONGO_URL;
-
-    if (!mongoUrl) {
-      throw new Error("MONGO_URL is missing in .env");
+    if (db) {
+      return db;
     }
 
-    client = new MongoClient(mongoUrl);
+    if (connectionPromise) {
+      return connectionPromise;
+    }
 
-    await client.connect();
+    const uri = process.env.MONGO_URL;
 
-    database = client.db(
-      process.env.MONGODB_DATABASE || "sps_enterprise"
-    );
+    if (!uri) {
+      throw new Error("MONGO_URL is missing from environment variables");
+    }
 
-    await database.command({ ping: 1 });
+    connectionPromise = (async () => {
+      const mongoClient = new MongoClient(uri);
 
-    console.log("MongoDB connected successfully!");
+      await mongoClient.connect();
 
-    return database;
+      const databaseName =
+        process.env.MONGODB_DB || process.env.DB_NAME;
+
+      client = mongoClient;
+      db = databaseName
+        ? mongoClient.db(databaseName)
+        : mongoClient.db();
+
+      console.log("MongoDB connected successfully");
+
+      return db;
+    })();
+
+    return await connectionPromise;
   } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
+    connectionPromise = null;
+    db = null;
+    client = null;
+
+    console.error("MongoDB connection error:", error.message);
+
     throw error;
   }
 };
 
 const getDB = () => {
-  if (!database) {
+  if (!db) {
     throw new Error("MongoDB is not connected. Call connectDB first.");
   }
 
-  return database;
+  return db;
 };
 
 const closeDB = async () => {
   if (client) {
     await client.close();
     client = null;
-    database = null;
+    db = null;
+    connectionPromise = null;
   }
 };
 
