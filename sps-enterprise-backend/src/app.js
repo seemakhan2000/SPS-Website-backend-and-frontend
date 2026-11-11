@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -11,12 +10,16 @@ const uploadRoutes = require("./routes/uploadRoutes");
 
 const app = express();
 
+// Vercel proxy ke peeche hota hai (secure cookies ke liye zaroori)
+app.set("trust proxy", 1);
+
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "https://sps-website-backend-and-frontend-ib.vercel.app",
   "https://sps-website-backend-and-frontend.vercel.app",
   "https://sps-website-backend-and-frontend-dtk6-901ts8c3q.vercel.app",
+  "https://AAPKA-FRONTEND-DOMAIN.vercel.app",
 ];
 
 const isAllowedVercelPreview = (origin) => {
@@ -35,7 +38,8 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+    // Error throw nahi karna, warna 500 aata hai
+    return callback(null, false);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

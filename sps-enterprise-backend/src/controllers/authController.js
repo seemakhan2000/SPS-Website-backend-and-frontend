@@ -1,5 +1,14 @@
 const jwt = require("jsonwebtoken");
 
+const isProd = process.env.NODE_ENV === "production";
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
+  path: "/",
+};
+
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -11,7 +20,7 @@ const login = async (req, res) => {
     }
 
     if (
-      email.trim() !== process.env.ADMIN_EMAIL.trim() ||
+      email.trim() !== (process.env.ADMIN_EMAIL || "").trim() ||
       password !== process.env.ADMIN_PASSWORD
     ) {
       return res.status(401).json({
@@ -32,9 +41,7 @@ const login = async (req, res) => {
     );
 
     res.cookie("admin_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      ...cookieOptions,
       maxAge: 24 * 60 * 60 * 1000,
     });
 
@@ -57,7 +64,7 @@ const login = async (req, res) => {
 
 const logout = async (req, res) => {
   try {
-    res.clearCookie("admin_token");
+    res.clearCookie("admin_token", cookieOptions);
 
     return res.status(200).json({
       message: "Logout successful",
