@@ -1,74 +1,37 @@
-const { MongoClient } = require("mongodb");
+const mongoose = require("mongoose");
 
-let client;
-let db;
-let connectionPromise;
+let cached = global._mongoose;
+if (!cached) cached = global._mongoose = { conn: null, promise: null };
 
 const connectDB = async () => {
-  try {
-    if (db) {
-      return db;
-    }
+  if (cached.conn) return cached.conn;
 
-    if (connectionPromise) {
-      return connectionPromise;
-    }
-
-    const uri = process.env.MONGO_URL;
-
-    if (!uri) {
-      throw new Error("MONGO_URL is missing from environment variables");
-    }
-
-    connectionPromise = (async () => {
-      const mongoClient = new MongoClient(uri);
-
-      await mongoClient.connect();
-
-      const databaseName =
-        process.env.MONGODB_DB || process.env.DB_NAME;
-
-      client = mongoClient;
-      db = databaseName
-        ? mongoClient.db(databaseName)
-        : mongoClient.db();
-
-      console.log("MongoDB connected successfully");
-
-      return db;
-    })();
-
-    return await connectionPromise;
-  } catch (error) {
-    connectionPromise = null;
-    db = null;
-    client = null;
-
-    console.error("MongoDB connection error:", error.message);
-
-    throw error;
+  if (!process.env.MONGO_URL) {
+    throw new Error("MONGO_URL is not set");
   }
+
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(process.env.MONGO_URL, {
+      serverSelectionTimeoutMS: 10000,
+      bufferCommands: false,
+    });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (err) {
+    cached.promise = null; 
+    throw err;
+  }
+  return cached.conn;
 };
+
 
 const getDB = () => {
-  if (!db) {
+  if (mongoose.connection.readyState !== 1) {
     throw new Error("MongoDB is not connected. Call connectDB first.");
   }
-
-  return db;
+  return mongoose.connection.db;
 };
 
-const closeDB = async () => {
-  if (client) {
-    await client.close();
-    client = null;
-    db = null;
-    connectionPromise = null;
-  }
-};
-
-module.exports = {
-  connectDB,
-  getDB,
-  closeDB,
-};
+module.exports = { connectDB, getDB };
