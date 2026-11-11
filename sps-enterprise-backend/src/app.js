@@ -14,7 +14,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
 
-  "https://sps-website-backend-and-frontend-7y.vercel.app",
+  "https://sps-website-backend-and-frontend-ib.vercel.app",
   "https://sps-website-backend-and-frontend.vercel.app",
 
   "https://sps-website-backend-and-frontend-dtk6-901ts8c3q.vercel.app",
