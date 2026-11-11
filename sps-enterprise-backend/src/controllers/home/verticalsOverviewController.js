@@ -1,79 +1,36 @@
-const { pool } = require("../../config/db");
+
+const { getDB } = require("../../config/db");
 
 
 // GET VERTICALS OVERVIEW
-const getVerticalsOverview = async (
-  siteContentId,
-  db = pool
-) => {
+const getVerticalsOverview = async (siteContentId) => {
+  const db = getDB();
 
-  // Get section
-  const [sectionRows] = await db.query(
-    `
-    SELECT
-      id,
-      label,
-      title_line1,
-      title_line2
-    FROM verticals_overview
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
+  // Get parent section
+  const section = await db.collection("verticals_overview").findOne(
+    { site_content_id: Number(siteContentId) },
+    { sort: { id: 1 } }
   );
 
-  if (sectionRows.length === 0) {
+  if (!section) {
     return null;
   }
 
-  const overviewId = sectionRows[0].id;
-
-
   // Get verticals
-  const [verticalRows] = await db.query(
-    `
-    SELECT
-      id,
-      vertical_key,
-      slug,
-      title,
-      image,
-      description,
-      sort_order
-    FROM verticals
-    WHERE verticals_overview_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [overviewId]
-  );
+  const verticalRows = await db.collection("verticals")
+    .find({ verticals_overview_id: section.id })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
+  // Get tags for all verticals
+  const verticalIds = verticalRows.map((vertical) => vertical.id);
 
-  // Get tags
-  let tagRows = [];
-
-  if (verticalRows.length > 0) {
-    const verticalIds = verticalRows.map(
-      (vertical) => vertical.id
-    );
-
-    [tagRows] = await db.query(
-      `
-      SELECT
-        id,
-        vertical_id,
-        tag,
-        sort_order
-      FROM vertical_tags
-      WHERE vertical_id IN (?)
-      ORDER BY
-        vertical_id ASC,
-        sort_order ASC,
-        id ASC
-      `,
-      [verticalIds]
-    );
-  }
-
+  const tagRows = verticalIds.length
+    ? await db.collection("vertical_tags")
+        .find({ vertical_id: { $in: verticalIds } })
+        .sort({ vertical_id: 1, sort_order: 1, id: 1 })
+        .toArray()
+    : [];
 
   // Create tags map
   const tagsMap = {};
@@ -86,365 +43,221 @@ const getVerticalsOverview = async (
     tagsMap[row.vertical_id].push(row.tag);
   }
 
-
   // Return frontend structure
   return {
-    label: sectionRows[0].label,
+    label: section.label,
+    titleLine1: section.title_line1,
+    titleLine2: section.title_line2,
 
-    titleLine1:
-      sectionRows[0].title_line1,
-
-    titleLine2:
-      sectionRows[0].title_line2,
-
-    verticals: verticalRows.map(
-      (vertical) => ({
-        id: vertical.vertical_key,
-
-        slug: vertical.slug,
-
-        title: vertical.title,
-
-        image: vertical.image,
-
-        description:
-          vertical.description,
-
-        tags:
-          tagsMap[vertical.id] || [],
-
-        sortOrder:
-          vertical.sort_order,
-      })
-    ),
+    verticals: verticalRows.map((vertical) => ({
+      id: vertical.vertical_key,
+      slug: vertical.slug,
+      title: vertical.title,
+      image: vertical.image,
+      description: vertical.description,
+      tags: tagsMap[vertical.id] || [],
+      sortOrder: vertical.sort_order,
+    })),
   };
+};
+
+
+// GET NEXT NUMERIC ID
+const getNextId = async (collectionName) => {
+  const db = getDB();
+
+  const lastRecord = await db.collection(collectionName)
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  return lastRecord ? Number(lastRecord.id) + 1 : 1;
 };
 
 
 // CREATE DEFAULT VERTICALS OVERVIEW
 const createDefaultVerticalsOverview = async (
   siteContentId,
-  defaultVerticalsOverview,
-  db
+  defaultVerticalsOverview
 ) => {
+  const db = getDB();
+
+  const overviewId = await getNextId("verticals_overview");
 
   // Create parent section
-  const [sectionResult] = await db.query(
-    `
-    INSERT INTO verticals_overview
-    (
-      label,
-      title_line1,
-      title_line2,
-      site_content_id
-    )
-    VALUES (?, ?, ?, ?)
-    `,
-    [
-      defaultVerticalsOverview.label,
-      defaultVerticalsOverview.titleLine1,
-      defaultVerticalsOverview.titleLine2,
-      siteContentId,
-    ]
-  );
-
-  const verticalsOverviewId =
-    sectionResult.insertId;
-
+  await db.collection("verticals_overview").insertOne({
+    id: overviewId,
+    label: defaultVerticalsOverview.label || "",
+    title_line1: defaultVerticalsOverview.titleLine1 || "",
+    title_line2: defaultVerticalsOverview.titleLine2 || "",
+    site_content_id: Number(siteContentId),
+  });
 
   // Create verticals
-  const verticals =
-    Array.isArray(
-      defaultVerticalsOverview.verticals
-    )
-      ? defaultVerticalsOverview.verticals
-      : [];
+  const verticals = Array.isArray(defaultVerticalsOverview.verticals)
+    ? defaultVerticalsOverview.verticals
+    : [];
 
-  for (
-    let index = 0;
-    index < verticals.length;
-    index++
-  ) {
+  for (let index = 0; index < verticals.length; index++) {
     const vertical = verticals[index];
 
+    const verticalId = await getNextId("verticals");
+
     const verticalKey =
-      vertical.id ||
-      `vertical-${Date.now()}-${index}`;
+      vertical.id || `vertical-${Date.now()}-${index}`;
 
-    const [verticalResult] =
-      await db.query(
-        `
-        INSERT INTO verticals
-        (
-          verticals_overview_id,
-          vertical_key,
-          slug,
-          title,
-          image,
-          description,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          verticalsOverviewId,
+    // Insert vertical
+    await db.collection("verticals").insertOne({
+      id: verticalId,
+      verticals_overview_id: overviewId,
+      vertical_key: verticalKey,
+      slug: vertical.slug || "",
+      title: vertical.title || "",
+      image: vertical.image || "",
+      description: vertical.description || "",
+      sort_order: vertical.sortOrder ?? index,
+    });
 
-          verticalKey,
+    // Insert tags
+    const tags = Array.isArray(vertical.tags) ? vertical.tags : [];
 
-          vertical.slug || "",
+    if (tags.length > 0) {
+      const tagDocuments = [];
 
-          vertical.title || "",
+      for (let tagIndex = 0; tagIndex < tags.length; tagIndex++) {
+        tagDocuments.push({
+          id: await getNextId("vertical_tags"),
+          vertical_id: verticalId,
+          tag: tags[tagIndex],
+          sort_order: tagIndex,
+        });
+      }
 
-          vertical.image || "",
-
-          vertical.description || "",
-
-          vertical.sortOrder ?? index,
-        ]
-      );
-
-    const verticalId =
-      verticalResult.insertId;
-
-
-    // Create tags
-    const tags =
-      Array.isArray(vertical.tags)
-        ? vertical.tags
-        : [];
-
-    for (
-      let tagIndex = 0;
-      tagIndex < tags.length;
-      tagIndex++
-    ) {
-      await db.query(
-        `
-        INSERT INTO vertical_tags
-        (
-          vertical_id,
-          tag,
-          sort_order
-        )
-        VALUES (?, ?, ?)
-        `,
-        [
-          verticalId,
-
-          tags[tagIndex],
-
-          tagIndex,
-        ]
-      );
+      await db.collection("vertical_tags").insertMany(tagDocuments);
     }
   }
+
+  return overviewId;
 };
 
 
 // UPDATE VERTICALS OVERVIEW
 const updateVerticalsOverview = async (
   siteContentId,
-  verticalsOverview,
-  connection
+  verticalsOverview
 ) => {
-
-  // Nothing received
-
-
   if (verticalsOverview === undefined) {
     return;
   }
 
+  const db = getDB();
 
   // Find existing section
-  const [existingSection] =
-    await connection.query(
-      `
-      SELECT id
-      FROM verticals_overview
-      WHERE site_content_id = ?
-      LIMIT 1
-      `,
-      [siteContentId]
-    );
+  let section = await db.collection("verticals_overview").findOne({
+    site_content_id: Number(siteContentId),
+  });
 
   let overviewId;
 
-
   // Update existing section
-  if (existingSection.length > 0) {
-    overviewId =
-      existingSection[0].id;
+  if (section) {
+    overviewId = section.id;
 
-    await connection.query(
-      `
-      UPDATE verticals_overview
-      SET
-        label = ?,
-        title_line1 = ?,
-        title_line2 = ?
-      WHERE id = ?
-      `,
-      [
-        verticalsOverview.label ||
-        "SPS Verticals",
+    await db.collection("verticals_overview").updateOne(
+      { id: overviewId },
+      {
+        $set: {
+          label: verticalsOverview.label || "SPS Verticals",
+          title_line1:
+            verticalsOverview.titleLine1 ||
+            "Comprehensive Industry Solutions",
+          title_line2:
+            verticalsOverview.titleLine2 ||
+            "Digital Transformation",
+        },
+      }
+    );
+  } else {
+    // Create section if missing
+    overviewId = await getNextId("verticals_overview");
 
+    await db.collection("verticals_overview").insertOne({
+      id: overviewId,
+      site_content_id: Number(siteContentId),
+      label: verticalsOverview.label || "SPS Verticals",
+      title_line1:
         verticalsOverview.titleLine1 ||
         "Comprehensive Industry Solutions",
-
+      title_line2:
         verticalsOverview.titleLine2 ||
         "Digital Transformation",
-
-        overviewId,
-      ]
-    );
+    });
   }
 
+  // Get existing verticals
+  const existingVerticals = await db.collection("verticals")
+    .find({ verticals_overview_id: overviewId })
+    .project({ id: 1 })
+    .toArray();
 
-  // Create section if missing
-  else {
-    const [sectionResult] =
-      await connection.query(
-        `
-        INSERT INTO verticals_overview
-        (
-          label,
-          title_line1,
-          title_line2,
-          site_content_id
-        )
-        VALUES (?, ?, ?, ?)
-        `,
-        [
-          verticalsOverview.label ||
-          "SPS Verticals",
-
-          verticalsOverview.titleLine1 ||
-          "Comprehensive Industry Solutions",
-
-          verticalsOverview.titleLine2 ||
-          "Digital Transformation",
-
-          siteContentId,
-        ]
-      );
-
-    overviewId =
-      sectionResult.insertId;
-  }
-
-
-  // Delete existing tags
-  //
-  // We must delete tags BEFORE deleting verticals
-  // because vertical_tags.vertical_id is a FK.
-
-  await connection.query(
-    `
-    DELETE vt
-    FROM vertical_tags vt
-    INNER JOIN verticals v
-      ON vt.vertical_id = v.id
-    WHERE v.verticals_overview_id = ?
-    `,
-    [overviewId]
+  const existingVerticalIds = existingVerticals.map(
+    (vertical) => vertical.id
   );
 
+  // Delete existing tags first
+  if (existingVerticalIds.length > 0) {
+    await db.collection("vertical_tags").deleteMany({
+      vertical_id: { $in: existingVerticalIds },
+    });
+  }
 
   // Delete existing verticals
-  await connection.query(
-    `
-    DELETE FROM verticals
-    WHERE verticals_overview_id = ?
-    `,
-    [overviewId]
-  );
+  await db.collection("verticals").deleteMany({
+    verticals_overview_id: overviewId,
+  });
 
+  // Insert updated verticals
+  const verticals = Array.isArray(verticalsOverview.verticals)
+    ? verticalsOverview.verticals
+    : [];
 
-  // Insert new verticals
-  const verticals =
-    Array.isArray(
-      verticalsOverview.verticals
-    )
-      ? verticalsOverview.verticals
-      : [];
-
-  for (
-    let index = 0;
-    index < verticals.length;
-    index++
-  ) {
+  for (let index = 0; index < verticals.length; index++) {
     const vertical = verticals[index];
 
+    const verticalId = await getNextId("verticals");
+
     const verticalKey =
-      vertical.id ||
-      `vertical-${Date.now()}-${index}`;
+      vertical.id || `vertical-${Date.now()}-${index}`;
 
-    const [verticalResult] =
-      await connection.query(
-        `
-        INSERT INTO verticals
-        (
-          verticals_overview_id,
-          vertical_key,
-          slug,
-          title,
-          image,
-          description,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          overviewId,
-
-          verticalKey,
-
-          vertical.slug || "",
-
-          vertical.title || "",
-
-          vertical.image || "",
-
-          vertical.description || "",
-
-          vertical.sortOrder ?? index,
-        ]
-      );
-
-    const verticalId =
-      verticalResult.insertId;
-
+    // Insert vertical
+    await db.collection("verticals").insertOne({
+      id: verticalId,
+      verticals_overview_id: overviewId,
+      vertical_key: verticalKey,
+      slug: vertical.slug || "",
+      title: vertical.title || "",
+      image: vertical.image || "",
+      description: vertical.description || "",
+      sort_order: vertical.sortOrder ?? index,
+    });
 
     // Insert tags
-    const tags =
-      Array.isArray(vertical.tags)
-        ? vertical.tags
-        : [];
+    const tags = Array.isArray(vertical.tags) ? vertical.tags : [];
 
-    for (
-      let tagIndex = 0;
-      tagIndex < tags.length;
-      tagIndex++
-    ) {
-      await connection.query(
-        `
-        INSERT INTO vertical_tags
-        (
-          vertical_id,
-          tag,
-          sort_order
-        )
-        VALUES (?, ?, ?)
-        `,
-        [
-          verticalId,
+    if (tags.length > 0) {
+      const tagDocuments = [];
 
-          tags[tagIndex],
+      for (let tagIndex = 0; tagIndex < tags.length; tagIndex++) {
+        tagDocuments.push({
+          id: await getNextId("vertical_tags"),
+          vertical_id: verticalId,
+          tag: tags[tagIndex],
+          sort_order: tagIndex,
+        });
+      }
 
-          tagIndex,
-        ]
-      );
+      await db.collection("vertical_tags").insertMany(tagDocuments);
     }
   }
 };

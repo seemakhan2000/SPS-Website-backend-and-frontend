@@ -1,52 +1,24 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET CLIENTS MARQUEE
-const getClientsMarquee = async (
-  siteContentId,
-  db = pool
-) => {
+const getClientsMarquee = async (siteContentId) => {
+  const db = getDB();
 
-  // Get main Clients Marquee record
-  const [marqueeRows] = await db.query(
-    `
-    SELECT
-      id,
-      title,
-      site_content_id
-    FROM clients_marquee
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const marquee = await db.collection("clients_marquee").findOne({
+    site_content_id: siteContentId,
+  });
 
-  // No DB record
-  if (marqueeRows.length === 0) {
+  if (!marquee) {
     return null;
   }
 
-  const marquee = marqueeRows[0];
+  const clientRows = await db
+    .collection("client_logos")
+    .find({ clients_marquee_id: marquee.id })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
-
-  // Get client logos
-  const [clientRows] = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      logo,
-      alt,
-      sort_order
-    FROM client_logos
-    WHERE clients_marquee_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [marquee.id]
-  );
-
-
-  // Return DB data
   return {
     id: marquee.id,
     title: marquee.title,
@@ -64,248 +36,154 @@ const getClientsMarquee = async (
 
 
 // CREATE CLIENTS MARQUEE
-const createClientsMarquee = async (
-  siteContentId,
-  clientsMarquee,
-  db = pool
-) => {
+const createClientsMarquee = async (siteContentId, clientsMarquee) => {
   if (!clientsMarquee) {
     throw new Error("Clients Marquee data is required");
   }
 
+  const db = getDB();
+  const marqueeCollection = db.collection("clients_marquee");
+  const logosCollection = db.collection("client_logos");
 
-  // Check existing record
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM clients_marquee
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const existing = await marqueeCollection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Clients Marquee already exists"
-    );
+  if (existing) {
+    throw new Error("Clients Marquee already exists");
   }
 
+  const lastRecord = await marqueeCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  // Create main marquee record
-  const [marqueeResult] = await db.query(
-    `
-    INSERT INTO clients_marquee
-    (
-      title,
-      site_content_id
-    )
-    VALUES (?, ?)
-    `,
-    [
-      clientsMarquee.title,
-      siteContentId,
-    ]
-  );
+  const newId = (lastRecord?.id || 0) + 1;
 
-  const clientsMarqueeId =
-    marqueeResult.insertId;
+  const newMarquee = {
+    id: newId,
+    title: clientsMarquee.title,
+    site_content_id: siteContentId,
+  };
 
+  await marqueeCollection.insertOne(newMarquee);
 
-  // Insert client logos
-  if (Array.isArray(clientsMarquee.clients)) {
-    for (
-      let index = 0;
-      index < clientsMarquee.clients.length;
-      index++
-    ) {
-      const client =
-        clientsMarquee.clients[index];
+  if (
+    Array.isArray(clientsMarquee.clients) &&
+    clientsMarquee.clients.length > 0
+  ) {
+    const lastLogo = await logosCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-      await db.query(
-        `
-        INSERT INTO client_logos
-        (
-          clients_marquee_id,
-          name,
-          logo,
-          alt,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [
-          clientsMarqueeId,
-          client.name,
-          client.logo,
-          client.alt,
-          client.sortOrder ?? index,
-        ]
-      );
-    }
+    let nextLogoId = (lastLogo?.id || 0) + 1;
+
+    const logos = clientsMarquee.clients.map((client, index) => ({
+      id: nextLogoId++,
+      clients_marquee_id: newId,
+      name: client.name,
+      logo: client.logo,
+      alt: client.alt,
+      sort_order: client.sortOrder ?? index,
+    }));
+
+    await logosCollection.insertMany(logos);
   }
 
-
-  // Return created DB record
-  return getClientsMarquee(
-    siteContentId,
-    db
-  );
+  return getClientsMarquee(siteContentId);
 };
 
 
 // UPDATE CLIENTS MARQUEE
-const updateClientsMarquee = async (
-  siteContentId,
-  clientsMarquee,
-  db = pool
-) => {
+const updateClientsMarquee = async (siteContentId, clientsMarquee) => {
   if (!clientsMarquee) {
     throw new Error("Clients Marquee data is required");
   }
 
+  const db = getDB();
+  const marqueeCollection = db.collection("clients_marquee");
+  const logosCollection = db.collection("client_logos");
 
-  // Find existing marquee
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM clients_marquee
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const existing = await marqueeCollection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Clients Marquee record not found"
-    );
+  if (!existing) {
+    throw new Error("Clients Marquee record not found");
   }
 
-  const clientsMarqueeId =
-    existingRows[0].id;
-
-
-  // Update main marquee
-  await db.query(
-    `
-    UPDATE clients_marquee
-    SET
-      title = ?
-    WHERE id = ?
-    `,
-    [
-      clientsMarquee.title,
-      clientsMarqueeId,
-    ]
-  );
-
-
-  // Delete existing client logos
-  await db.query(
-    `
-    DELETE FROM client_logos
-    WHERE clients_marquee_id = ?
-    `,
-    [clientsMarqueeId]
-  );
-
-
-  // Insert updated client logos
-  if (Array.isArray(clientsMarquee.clients)) {
-    for (
-      let index = 0;
-      index < clientsMarquee.clients.length;
-      index++
-    ) {
-      const client =
-        clientsMarquee.clients[index];
-
-      await db.query(
-        `
-        INSERT INTO client_logos
-        (
-          clients_marquee_id,
-          name,
-          logo,
-          alt,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [
-          clientsMarqueeId,
-          client.name,
-          client.logo,
-          client.alt,
-          client.sortOrder ?? index,
-        ]
-      );
+  await marqueeCollection.updateOne(
+    { id: existing.id },
+    {
+      $set: {
+        title: clientsMarquee.title,
+      },
     }
+  );
+
+  // Remove old logos
+  await logosCollection.deleteMany({
+    clients_marquee_id: existing.id,
+  });
+
+  // Insert updated logos
+  if (
+    Array.isArray(clientsMarquee.clients) &&
+    clientsMarquee.clients.length > 0
+  ) {
+    const lastLogo = await logosCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
+
+    let nextLogoId = (lastLogo?.id || 0) + 1;
+
+    const logos = clientsMarquee.clients.map((client, index) => ({
+      id: nextLogoId++,
+      clients_marquee_id: existing.id,
+      name: client.name,
+      logo: client.logo,
+      alt: client.alt,
+      sort_order: client.sortOrder ?? index,
+    }));
+
+    await logosCollection.insertMany(logos);
   }
 
-
-  // Return updated DB record
-  return getClientsMarquee(
-    siteContentId,
-    db
-  );
+  return getClientsMarquee(siteContentId);
 };
 
 
 // DELETE CLIENTS MARQUEE
-const deleteClientsMarquee = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteClientsMarquee = async (siteContentId) => {
+  const db = getDB();
 
-  // Find existing marquee
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM clients_marquee
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const marqueeCollection = db.collection("clients_marquee");
+  const logosCollection = db.collection("client_logos");
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Clients Marquee record not found"
-    );
+  const existing = await marqueeCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Clients Marquee record not found");
   }
 
-  const clientsMarqueeId =
-    existingRows[0].id;
+  // Delete associated logos first
+  await logosCollection.deleteMany({
+    clients_marquee_id: existing.id,
+  });
 
+  const result = await marqueeCollection.deleteOne({
+    id: existing.id,
+  });
 
-  // Delete client logos first
-  await db.query(
-    `
-    DELETE FROM client_logos
-    WHERE clients_marquee_id = ?
-    `,
-    [clientsMarqueeId]
-  );
-
-
-  // Delete 
-  const [result] = await db.query(
-    `
-    DELETE FROM clients_marquee
-    WHERE id = ?
-    `,
-    [clientsMarqueeId]
-  );
-
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Clients Marquee record not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Clients Marquee record not found");
   }
 
   return true;

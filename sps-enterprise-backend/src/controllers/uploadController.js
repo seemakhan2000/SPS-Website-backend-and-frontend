@@ -122,7 +122,6 @@ const uploadFile = async (req, res) => {
 
     return res.status(200).json({
       message: "File uploaded successfully",
-
       fileUrl: result.secure_url,
       publicId: result.public_id,
       resourceType: result.resource_type,
@@ -174,18 +173,21 @@ const extractCloudinaryPublicId = (filePath) => {
 
     const uploadIndex = url.pathname.indexOf("/upload/");
 
-    let filePathAfterUpload = url.pathname.slice(
+    if (uploadIndex === -1) {
+      return null;
+    }
+
+    const filePathAfterUpload = url.pathname.slice(
       uploadIndex + "/upload/".length
     );
 
     const parts = filePathAfterUpload.split("/");
 
-    // Remove Cloudinary transformations if present
+    // Remove Cloudinary transformations
     while (
       parts.length > 0 &&
       (
         parts[0].includes(",") ||
-        parts[0].includes("_") && parts[0].includes(",") ||
         /^q_|^f_|^w_|^h_|^c_|^e_/.test(parts[0])
       )
     ) {
@@ -229,7 +231,7 @@ const deleteFile = async (req, res) => {
       filePath,
     } = req.body;
 
-    // Extract Public ID from existing Cloudinary URL
+    // Extract Public ID from Cloudinary URL
     if (!publicId && filePath) {
       const extracted = extractCloudinaryPublicId(filePath);
 

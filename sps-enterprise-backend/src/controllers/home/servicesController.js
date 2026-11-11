@@ -1,115 +1,57 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET SERVICES OVERVIEW
-const getServicesOverview = async (
-  siteContentId,
-  db = pool
-) => {
+const getServicesOverview = async (siteContentId) => {
+  const db = getDB();
 
-  // GET SERVICE CATEGORIES
-  const [serviceCategoryRows] =
-    await db.query(
-      `
-      SELECT
-        id,
-        slug,
-        label,
-        description,
-        icon,
-        sort_order,
-        site_content_id
-      FROM service_categories
-      WHERE site_content_id = ?
-      ORDER BY sort_order ASC, id ASC
-      `,
-      [siteContentId]
-    );
+  const categoryCollection = db.collection("service_categories");
+  const cardCollection = db.collection("service_cards");
 
+  // Get service categories
+  const serviceCategoryRows = await categoryCollection
+    .find({ site_content_id: siteContentId })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
-  // GET SERVICE CARDS
-  const [serviceCardRows] =
-    await db.query(
-      `
-      SELECT
-        id,
-        slug,
-        title,
-        description,
-        href,
-        icon,
-        sort_order,
-        category_id
-      FROM service_cards
-      WHERE category_id IN (
-        SELECT id
-        FROM service_categories
-        WHERE site_content_id = ?
-      )
-      ORDER BY sort_order ASC, id ASC
-      `,
-      [siteContentId]
-    );
-
-
-  // NO DATA
   if (serviceCategoryRows.length === 0) {
     return null;
   }
 
+  // Get cards belonging to these categories
+  const categoryIds = serviceCategoryRows.map(
+    (category) => category.id
+  );
 
-  // RETURN DB DATA
+  const serviceCardRows = await cardCollection
+    .find({ category_id: { $in: categoryIds } })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
+
+  // Return DB data
   return {
-    categories: serviceCategoryRows.map(
-      (category) => ({
-        id: category.id,
+    categories: serviceCategoryRows.map((category) => ({
+      id: category.id,
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      sortOrder: category.sort_order,
+      siteContentId: category.site_content_id,
 
-        slug: category.slug,
-
-        label: category.label,
-
-        description:
-          category.description,
-
-        icon:
-          category.icon,
-
-        sortOrder:
-          category.sort_order,
-
-        siteContentId:
-          category.site_content_id,
-
-        cards: serviceCardRows
-          .filter(
-            (card) =>
-              card.category_id ===
-              category.id
-          )
-          .map((card) => ({
-            id: card.id,
-
-            slug: card.slug,
-
-            title: card.title,
-
-            description:
-              card.description,
-
-            href:
-              card.href,
-
-            icon:
-              card.icon,
-
-            sortOrder:
-              card.sort_order,
-
-            categoryId:
-              card.category_id,
-          })),
-      })
-    ),
+      cards: serviceCardRows
+        .filter((card) => card.category_id === category.id)
+        .map((card) => ({
+          id: card.id,
+          slug: card.slug,
+          title: card.title,
+          description: card.description,
+          href: card.href,
+          icon: card.icon,
+          sortOrder: card.sort_order,
+          categoryId: card.category_id,
+        })),
+    })),
   };
 };
 
@@ -117,308 +59,258 @@ const getServicesOverview = async (
 // CREATE SERVICES OVERVIEW
 const createServicesOverview = async (
   siteContentId,
-  servicesOverview,
-  db = pool
+  servicesOverview
 ) => {
   if (!servicesOverview) {
-    throw new Error(
-      "Services Overview data is required"
-    );
+    throw new Error("Services Overview data is required");
   }
 
-  if (
-    !Array.isArray(
-      servicesOverview.categories
-    )
-  ) {
-    throw new Error(
-      "Services Overview categories are required"
-    );
+  if (!Array.isArray(servicesOverview.categories)) {
+    throw new Error("Services Overview categories are required");
   }
 
+  const db = getDB();
 
-  // CHECK EXISTING CATEGORIES
-  const [existingRows] =
-    await db.query(
-      `
-      SELECT id
-      FROM service_categories
-      WHERE site_content_id = ?
-      LIMIT 1
-      `,
-      [siteContentId]
-    );
+  const categoryCollection = db.collection("service_categories");
+  const cardCollection = db.collection("service_cards");
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Services Overview already exists"
-    );
+  // Check existing categories
+  const existing = await categoryCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (existing) {
+    throw new Error("Services Overview already exists");
   }
 
+  // Generate category IDs
+  const lastCategory = await categoryCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  // CREATE CATEGORIES
+  let nextCategoryId = (lastCategory?.id || 0) + 1;
+
+  // Generate card IDs
+  const lastCard = await cardCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  let nextCardId = (lastCard?.id || 0) + 1;
+
+  const categoriesToInsert = [];
+  const cardsToInsert = [];
+
+  // Prepare categories and cards
   for (
     let categoryIndex = 0;
-    categoryIndex <
-    servicesOverview.categories.length;
+    categoryIndex < servicesOverview.categories.length;
     categoryIndex++
   ) {
-    const category =
-      servicesOverview.categories[
-      categoryIndex
-      ];
+    const category = servicesOverview.categories[categoryIndex];
 
-    const [categoryResult] =
-      await db.query(
-        `
-        INSERT INTO service_categories
-        (
-          slug,
-          label,
-          description,
-          icon,
-          sort_order,
-          site_content_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          category.slug,
-          category.label,
-          category.description,
-          category.icon,
-          category.sortOrder ?? categoryIndex,
-          siteContentId,
-        ]
-      );
+    const categoryId = nextCategoryId++;
 
-    const categoryId =
-      categoryResult.insertId;
+    categoriesToInsert.push({
+      id: categoryId,
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      sort_order: category.sortOrder ?? categoryIndex,
+      site_content_id: siteContentId,
+    });
 
-
-    // CREATE CARDS
+    // Prepare cards
     if (Array.isArray(category.cards)) {
       for (
         let cardIndex = 0;
         cardIndex < category.cards.length;
         cardIndex++
       ) {
-        const card =
-          category.cards[cardIndex];
+        const card = category.cards[cardIndex];
 
-        await db.query(
-          `
-          INSERT INTO service_cards
-          (
-            slug,
-            title,
-            description,
-            href,
-            icon,
-            sort_order,
-            category_id
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            card.slug,
-            card.title,
-            card.description,
-            card.href,
-            card.icon,
-            card.sortOrder ?? cardIndex,
-            categoryId,
-          ]
-        );
+        cardsToInsert.push({
+          id: nextCardId++,
+          slug: card.slug,
+          title: card.title,
+          description: card.description,
+          href: card.href,
+          icon: card.icon,
+          sort_order: card.sortOrder ?? cardIndex,
+          category_id: categoryId,
+        });
       }
     }
   }
 
-  return getServicesOverview(
-    siteContentId,
-    db
-  );
+  // Insert categories
+  if (categoriesToInsert.length > 0) {
+    await categoryCollection.insertMany(categoriesToInsert);
+  }
+
+  // Insert cards
+  if (cardsToInsert.length > 0) {
+    await cardCollection.insertMany(cardsToInsert);
+  }
+
+  return getServicesOverview(siteContentId);
 };
 
 
 // UPDATE SERVICES OVERVIEW
 const updateServicesOverview = async (
   siteContentId,
-  servicesOverview,
-  db = pool
+  servicesOverview
 ) => {
   if (!servicesOverview) {
-    throw new Error(
-      "Services Overview data is required"
-    );
+    throw new Error("Services Overview data is required");
   }
 
-  if (
-    !Array.isArray(
-      servicesOverview.categories
-    )
-  ) {
-    throw new Error(
-      "Services Overview categories are required"
-    );
+  if (!Array.isArray(servicesOverview.categories)) {
+    throw new Error("Services Overview categories are required");
   }
 
+  const db = getDB();
 
-  // CHECK EXISTING CATEGORIES
-  const [existingRows] =
-    await db.query(
-      `
-      SELECT id
-      FROM service_categories
-      WHERE site_content_id = ?
-      LIMIT 1
-      `,
-      [siteContentId]
-    );
+  const categoryCollection = db.collection("service_categories");
+  const cardCollection = db.collection("service_cards");
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Services Overview record not found"
-    );
+  // Check existing categories
+  const existingCategories = await categoryCollection
+    .find({ site_content_id: siteContentId })
+    .toArray();
+
+  if (existingCategories.length === 0) {
+    throw new Error("Services Overview record not found");
   }
 
-
-  // DELETE OLD CATEGORIES
-  // service_cards will be deleted automatically
-  // if ON DELETE CASCADE is configured.
-  await db.query(
-    `
-    DELETE FROM service_categories
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
+  const oldCategoryIds = existingCategories.map(
+    (category) => category.id
   );
 
+  // Delete old cards first
+  await cardCollection.deleteMany({
+    category_id: { $in: oldCategoryIds },
+  });
 
-  // INSERT CURRENT CATEGORIES
+  // Delete old categories
+  await categoryCollection.deleteMany({
+    site_content_id: siteContentId,
+  });
+
+  // Generate category IDs
+  const lastCategory = await categoryCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  let nextCategoryId = (lastCategory?.id || 0) + 1;
+
+  // Generate card IDs
+  const lastCard = await cardCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  let nextCardId = (lastCard?.id || 0) + 1;
+
+  const categoriesToInsert = [];
+  const cardsToInsert = [];
+
+  // Prepare new categories and cards
   for (
     let categoryIndex = 0;
-    categoryIndex <
-    servicesOverview.categories.length;
+    categoryIndex < servicesOverview.categories.length;
     categoryIndex++
   ) {
-    const category =
-      servicesOverview.categories[
-      categoryIndex
-      ];
+    const category = servicesOverview.categories[categoryIndex];
 
-    const [categoryResult] =
-      await db.query(
-        `
-        INSERT INTO service_categories
-        (
-          slug,
-          label,
-          description,
-          icon,
-          sort_order,
-          site_content_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          category.slug,
-          category.label,
-          category.description,
-          category.icon,
-          category.sortOrder ?? categoryIndex,
-          siteContentId,
-        ]
-      );
+    const categoryId = nextCategoryId++;
 
-    const categoryId =
-      categoryResult.insertId;
+    categoriesToInsert.push({
+      id: categoryId,
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      sort_order: category.sortOrder ?? categoryIndex,
+      site_content_id: siteContentId,
+    });
 
-
-    // INSERT CURRENT CARDS
     if (Array.isArray(category.cards)) {
       for (
         let cardIndex = 0;
         cardIndex < category.cards.length;
         cardIndex++
       ) {
-        const card =
-          category.cards[cardIndex];
+        const card = category.cards[cardIndex];
 
-        await db.query(
-          `
-          INSERT INTO service_cards
-          (
-            slug,
-            title,
-            description,
-            href,
-            icon,
-            sort_order,
-            category_id
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            card.slug,
-            card.title,
-            card.description,
-            card.href,
-            card.icon,
-            card.sortOrder ?? cardIndex,
-            categoryId,
-          ]
-        );
+        cardsToInsert.push({
+          id: nextCardId++,
+          slug: card.slug,
+          title: card.title,
+          description: card.description,
+          href: card.href,
+          icon: card.icon,
+          sort_order: card.sortOrder ?? cardIndex,
+          category_id: categoryId,
+        });
       }
     }
   }
 
-  return getServicesOverview(
-    siteContentId,
-    db
-  );
+  // Insert categories
+  if (categoriesToInsert.length > 0) {
+    await categoryCollection.insertMany(categoriesToInsert);
+  }
+
+  // Insert cards
+  if (cardsToInsert.length > 0) {
+    await cardCollection.insertMany(cardsToInsert);
+  }
+
+  return getServicesOverview(siteContentId);
 };
 
 
 // DELETE SERVICES OVERVIEW
-const deleteServicesOverview = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteServicesOverview = async (siteContentId) => {
+  const db = getDB();
 
-  // CHECK EXISTING CATEGORIES
-  const [existingRows] =
-    await db.query(
-      `
-      SELECT id
-      FROM service_categories
-      WHERE site_content_id = ?
-      LIMIT 1
-      `,
-      [siteContentId]
-    );
+  const categoryCollection = db.collection("service_categories");
+  const cardCollection = db.collection("service_cards");
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Services Overview record not found"
-    );
+  // Get existing categories
+  const existingCategories = await categoryCollection
+    .find({ site_content_id: siteContentId })
+    .toArray();
+
+  if (existingCategories.length === 0) {
+    throw new Error("Services Overview record not found");
   }
 
+  const categoryIds = existingCategories.map(
+    (category) => category.id
+  );
 
-  // DELETE CATEGORIES
-  const [result] =
-    await db.query(
-      `
-      DELETE FROM service_categories
-      WHERE site_content_id = ?
-      `,
-      [siteContentId]
-    );
+  // Delete related cards first
+  await cardCollection.deleteMany({
+    category_id: { $in: categoryIds },
+  });
 
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Services Overview record not found"
-    );
+  // Delete categories
+  const result = await categoryCollection.deleteMany({
+    site_content_id: siteContentId,
+  });
+
+  if (result.deletedCount === 0) {
+    throw new Error("Services Overview record not found");
   }
 
   return true;
@@ -431,4 +323,4 @@ module.exports = {
   createServicesOverview,
   updateServicesOverview,
   deleteServicesOverview,
-}; 
+};

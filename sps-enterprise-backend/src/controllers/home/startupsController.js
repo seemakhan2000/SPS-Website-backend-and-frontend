@@ -1,26 +1,15 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET STARTUPS
-const getStartups = async (
-  siteContentId,
-  db = pool
-) => {
-  const [startupRows] = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      logo,
-      description,
-      sort_order,
-      site_content_id
-    FROM startups
-    WHERE site_content_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [siteContentId]
-  );
+const getStartups = async (siteContentId) => {
+  const db = getDB();
+
+  const startupRows = await db
+    .collection("startups")
+    .find({ site_content_id: siteContentId })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
   return startupRows.map((startup) => ({
     id: startup.id,
@@ -34,190 +23,120 @@ const getStartups = async (
 
 
 // CREATE STARTUPS
-const createStartups = async (
-  siteContentId,
-  startups,
-  db = pool
-) => {
+const createStartups = async (siteContentId, startups) => {
   if (!Array.isArray(startups)) {
-    throw new Error(
-      "Startups data is required"
-    );
+    throw new Error("Startups data is required");
   }
 
+  const db = getDB();
+  const collection = db.collection("startups");
 
-  // CHECK EXISTING STARTUPS
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM startups
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  // Check existing startups
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Startups already exist"
-    );
+  if (existing) {
+    throw new Error("Startups already exist");
   }
 
+  if (startups.length > 0) {
+    // Generate IDs
+    const lastStartup = await collection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-  // INSERT STARTUPS
-  for (
-    let startupIndex = 0;
-    startupIndex < startups.length;
-    startupIndex++
-  ) {
-    const startup =
-      startups[startupIndex];
+    let nextId = (lastStartup?.id || 0) + 1;
 
-    await db.query(
-      `
-      INSERT INTO startups
-      (
-        name,
-        logo,
-        description,
-        sort_order,
-        site_content_id
-      )
-      VALUES (?, ?, ?, ?, ?)
-      `,
-      [
-        startup.name,
-        startup.logo,
-        startup.description,
-        startup.sortOrder ?? startupIndex,
-        siteContentId,
-      ]
-    );
+    // Prepare documents
+    const startupDocuments = startups.map((startup, index) => ({
+      id: nextId++,
+      name: startup.name,
+      logo: startup.logo,
+      description: startup.description,
+      sort_order: startup.sortOrder ?? index,
+      site_content_id: siteContentId,
+    }));
+
+    await collection.insertMany(startupDocuments);
   }
 
-  return getStartups(
-    siteContentId,
-    db
-  );
+  return getStartups(siteContentId);
 };
 
 
-// UPDATE STARTUPs
-const updateStartups = async (
-  siteContentId,
-  startups,
-  db = pool
-) => {
+// UPDATE STARTUPS
+const updateStartups = async (siteContentId, startups) => {
   if (!Array.isArray(startups)) {
-    throw new Error(
-      "Startups data is required"
-    );
+    throw new Error("Startups data is required");
   }
 
+  const db = getDB();
+  const collection = db.collection("startups");
 
-  // CHECK EXISTING STARTUPS
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM startups
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  // Check existing startups
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Startups record not found"
-    );
+  if (!existing) {
+    throw new Error("Startups record not found");
   }
 
+  // Delete old startups
+  await collection.deleteMany({
+    site_content_id: siteContentId,
+  });
 
-  // DELETE OLD STARTUPS
-  await db.query(
-    `
-    DELETE FROM startups
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
+  // Insert current startups
+  if (startups.length > 0) {
+    const lastStartup = await collection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
+    let nextId = (lastStartup?.id || 0) + 1;
 
-  // INSERT CURRENT STARTUPS
-  for (
-    let startupIndex = 0;
-    startupIndex < startups.length;
-    startupIndex++
-  ) {
-    const startup =
-      startups[startupIndex];
+    const startupDocuments = startups.map((startup, index) => ({
+      id: nextId++,
+      name: startup.name,
+      logo: startup.logo,
+      description: startup.description,
+      sort_order: startup.sortOrder ?? index,
+      site_content_id: siteContentId,
+    }));
 
-    await db.query(
-      `
-      INSERT INTO startups
-      (
-        name,
-        logo,
-        description,
-        sort_order,
-        site_content_id
-      )
-      VALUES (?, ?, ?, ?, ?)
-      `,
-      [
-        startup.name,
-        startup.logo,
-        startup.description,
-        startup.sortOrder ?? startupIndex,
-        siteContentId,
-      ]
-    );
+    await collection.insertMany(startupDocuments);
   }
 
-  return getStartups(
-    siteContentId,
-    db
-  );
+  return getStartups(siteContentId);
 };
 
 
 // DELETE STARTUPS
-const deleteStartups = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteStartups = async (siteContentId) => {
+  const db = getDB();
+  const collection = db.collection("startups");
 
-  // CHECK EXISTING STARTUPS
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM startups
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  // Check existing startups
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Startups record not found"
-    );
+  if (!existing) {
+    throw new Error("Startups record not found");
   }
 
+  // Delete startups
+  const result = await collection.deleteMany({
+    site_content_id: siteContentId,
+  });
 
-  // DELETE STARTUPS
-  const [result] = await db.query(
-    `
-    DELETE FROM startups
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
-
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Startups record not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Startups record not found");
   }
 
   return true;

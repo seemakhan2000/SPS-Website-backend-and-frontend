@@ -1,52 +1,28 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET TECHNOLOGY PARTNERS
-const getTechnologyPartners = async (
-  siteContentId,
-  db = pool
-) => {
-  const [sectionRows] = await db.query(
-    `
-    SELECT
-      id,
-      title,
-      description,
-      site_content_id
-    FROM technology_partners
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const getTechnologyPartners = async (siteContentId) => {
+  const db = getDB();
 
-  if (sectionRows.length === 0) {
+  const section = await db.collection("technology_partners").findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!section) {
     return null;
   }
 
-  const section = sectionRows[0];
-
-  const [partnerRows] = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      tagline,
-      image,
-      href,
-      sort_order
-    FROM technology_partner_items
-    WHERE technology_partners_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [section.id]
-  );
+  // Get partner items
+  const partnerRows = await db
+    .collection("technology_partner_items")
+    .find({ technology_partners_id: section.id })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
   return {
     id: section.id,
-
     title: section.title,
-
     description: section.description,
 
     partners: partnerRows.map((partner) => ({
@@ -66,231 +42,174 @@ const getTechnologyPartners = async (
 // CREATE TECHNOLOGY PARTNERS
 const createTechnologyPartners = async (
   siteContentId,
-  technologyPartners,
-  db = pool
+  technologyPartners
 ) => {
   if (!technologyPartners) {
-    throw new Error(
-      "Technology Partners data is required"
-    );
+    throw new Error("Technology Partners data is required");
   }
 
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM technology_partners
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const db = getDB();
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Technology Partners already exists"
-    );
+  const sectionCollection = db.collection("technology_partners");
+  const itemsCollection = db.collection("technology_partner_items");
+
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (existing) {
+    throw new Error("Technology Partners already exists");
   }
 
-  const [sectionResult] = await db.query(
-    `
-    INSERT INTO technology_partners
-    (
-      site_content_id,
-      title,
-      description
-    )
-    VALUES (?, ?, ?)
-    `,
-    [
-      siteContentId,
-      technologyPartners.title,
-      technologyPartners.description,
-    ]
-  );
+  // Generate section ID
+  const lastSection = await sectionCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  const technologyPartnersId =
-    sectionResult.insertId;
+  const technologyPartnersId = (lastSection?.id || 0) + 1;
 
-  if (Array.isArray(technologyPartners.partners)) {
-    for (
-      let index = 0;
-      index < technologyPartners.partners.length;
-      index++
-    ) {
-      const partner =
-        technologyPartners.partners[index];
+  // Create main section
+  await sectionCollection.insertOne({
+    id: technologyPartnersId,
+    site_content_id: siteContentId,
+    title: technologyPartners.title,
+    description: technologyPartners.description,
+  });
 
-      await db.query(
-        `
-        INSERT INTO technology_partner_items
-        (
-          technology_partners_id,
-          name,
-          tagline,
-          image,
-          href,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          technologyPartnersId,
-          partner.name,
-          partner.tagline,
-          partner.image,
-          partner.href,
-          partner.sortOrder ?? index,
-        ]
-      );
-    }
+  // Create partner items
+  if (
+    Array.isArray(technologyPartners.partners) &&
+    technologyPartners.partners.length > 0
+  ) {
+    const lastPartner = await itemsCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
+
+    let nextPartnerId = (lastPartner?.id || 0) + 1;
+
+    const partners = technologyPartners.partners.map((partner, index) => ({
+      id: nextPartnerId++,
+      technology_partners_id: technologyPartnersId,
+      name: partner.name,
+      tagline: partner.tagline,
+      image: partner.image,
+      href: partner.href,
+      sort_order: partner.sortOrder ?? index,
+    }));
+
+    await itemsCollection.insertMany(partners);
   }
 
-  return getTechnologyPartners(
-    siteContentId,
-    db
-  );
+  return getTechnologyPartners(siteContentId);
 };
 
 
 // UPDATE TECHNOLOGY PARTNERS
 const updateTechnologyPartners = async (
   siteContentId,
-  technologyPartners,
-  db = pool
+  technologyPartners
 ) => {
   if (!technologyPartners) {
-    throw new Error(
-      "Technology Partners data is required"
-    );
+    throw new Error("Technology Partners data is required");
   }
 
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM technology_partners
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const db = getDB();
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Technology Partners record not found"
-    );
+  const sectionCollection = db.collection("technology_partners");
+  const itemsCollection = db.collection("technology_partner_items");
+
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Technology Partners record not found");
   }
 
-  const technologyPartnersId =
-    existingRows[0].id;
+  const technologyPartnersId = existing.id;
 
-  await db.query(
-    `
-    UPDATE technology_partners
-    SET
-      title = ?,
-      description = ?
-    WHERE site_content_id = ?
-    `,
-    [
-      technologyPartners.title,
-      technologyPartners.description,
-      siteContentId,
-    ]
-  );
-
-  await db.query(
-    `
-    DELETE FROM technology_partner_items
-    WHERE technology_partners_id = ?
-    `,
-    [technologyPartnersId]
-  );
-
-  if (Array.isArray(technologyPartners.partners)) {
-    for (
-      let index = 0;
-      index < technologyPartners.partners.length;
-      index++
-    ) {
-      const partner =
-        technologyPartners.partners[index];
-
-      await db.query(
-        `
-        INSERT INTO technology_partner_items
-        (
-          technology_partners_id,
-          name,
-          tagline,
-          image,
-          href,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          technologyPartnersId,
-          partner.name,
-          partner.tagline,
-          partner.image,
-          partner.href,
-          partner.sortOrder ?? index,
-        ]
-      );
+  // Update main section
+  await sectionCollection.updateOne(
+    { id: technologyPartnersId },
+    {
+      $set: {
+        title: technologyPartners.title,
+        description: technologyPartners.description,
+      },
     }
+  );
+
+  // Delete old partner items
+  await itemsCollection.deleteMany({
+    technology_partners_id: technologyPartnersId,
+  });
+
+  // Insert current partner items
+  if (
+    Array.isArray(technologyPartners.partners) &&
+    technologyPartners.partners.length > 0
+  ) {
+    const lastPartner = await itemsCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
+
+    let nextPartnerId = (lastPartner?.id || 0) + 1;
+
+    const partners = technologyPartners.partners.map((partner, index) => ({
+      id: nextPartnerId++,
+      technology_partners_id: technologyPartnersId,
+      name: partner.name,
+      tagline: partner.tagline,
+      image: partner.image,
+      href: partner.href,
+      sort_order: partner.sortOrder ?? index,
+    }));
+
+    await itemsCollection.insertMany(partners);
   }
 
-  return getTechnologyPartners(
-    siteContentId,
-    db
-  );
+  return getTechnologyPartners(siteContentId);
 };
 
 
 // DELETE TECHNOLOGY PARTNERS
-const deleteTechnologyPartners = async (
-  siteContentId,
-  db = pool
-) => {
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM technology_partners
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const deleteTechnologyPartners = async (siteContentId) => {
+  const db = getDB();
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Technology Partners record not found"
-    );
+  const sectionCollection = db.collection("technology_partners");
+  const itemsCollection = db.collection("technology_partner_items");
+
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Technology Partners record not found");
   }
 
-  const technologyPartnersId =
-    existingRows[0].id;
+  const technologyPartnersId = existing.id;
 
-  await db.query(
-    `
-    DELETE FROM technology_partner_items
-    WHERE technology_partners_id = ?
-    `,
-    [technologyPartnersId]
-  );
+  // Delete related partner items first
+  await itemsCollection.deleteMany({
+    technology_partners_id: technologyPartnersId,
+  });
 
-  const [result] = await db.query(
-    `
-    DELETE FROM technology_partners
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
+  // Delete main section
+  const result = await sectionCollection.deleteOne({
+    site_content_id: siteContentId,
+  });
 
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Technology Partners record not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Technology Partners record not found");
   }
 
   return true;

@@ -1,69 +1,32 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET PRODUCTS
-const getProducts = async (
-  siteContentId,
-  db = pool
-) => {
-  const [sectionRows] = await db.query(
-    `
-    SELECT
-      id,
-      title,
-      years_number,
-      years_text,
-      years_description,
-      background_image,
-      site_content_id
-    FROM products_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const getProducts = async (siteContentId) => {
+  const db = getDB();
 
-  if (sectionRows.length === 0) {
+  const section = await db.collection("products_section").findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!section) {
     return null;
   }
 
-  const section = sectionRows[0];
+  // Get products
+  const productRows = await db
+    .collection("products")
+    .find({ section_id: section.id })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
-
-  // GET PRODUCTS
-  const [productRows] = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      image,
-      description,
-      sort_order
-    FROM products
-    WHERE section_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [section.id]
-  );
-
-
-  // RETURN DB DATA
   return {
     id: section.id,
-
     title: section.title,
-
-    yearsNumber:
-      section.years_number,
-
-    yearsText:
-      section.years_text,
-
-    yearsDescription:
-      section.years_description,
-
-    backgroundImage:
-      section.background_image,
+    yearsNumber: section.years_number,
+    yearsText: section.years_text,
+    yearsDescription: section.years_description,
+    backgroundImage: section.background_image,
 
     products: productRows.map((product) => ({
       id: product.id,
@@ -73,268 +36,180 @@ const getProducts = async (
       sortOrder: product.sort_order,
     })),
 
-    siteContentId:
-      section.site_content_id,
+    siteContentId: section.site_content_id,
   };
 };
 
 
 // CREATE PRODUCTS
-const createProducts = async (
-  siteContentId,
-  productsContent,
-  db = pool
-) => {
+const createProducts = async (siteContentId, productsContent) => {
   if (!productsContent) {
-    throw new Error(
-      "Products data is required"
-    );
+    throw new Error("Products data is required");
   }
 
+  const db = getDB();
 
-  // CHECK EXISTING SECTION
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM products_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const sectionCollection = db.collection("products_section");
+  const productsCollection = db.collection("products");
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Products section already exists"
-    );
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (existing) {
+    throw new Error("Products section already exists");
   }
 
+  // Generate section ID
+  const lastSection = await sectionCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  // CREATE PRODUCTS SECTION
-  const [sectionResult] = await db.query(
-    `
-    INSERT INTO products_section
-    (
-      title,
-      years_number,
-      years_text,
-      years_description,
-      background_image,
-      site_content_id
-    )
-    VALUES (?, ?, ?, ?, ?, ?)
-    `,
-    [
-      productsContent.title,
-      productsContent.yearsNumber,
-      productsContent.yearsText,
-      productsContent.yearsDescription,
-      productsContent.backgroundImage,
-      siteContentId,
-    ]
-  );
+  const sectionId = (lastSection?.id || 0) + 1;
 
-  const sectionId =
-    sectionResult.insertId;
+  // Create products section
+  await sectionCollection.insertOne({
+    id: sectionId,
+    title: productsContent.title,
+    years_number: productsContent.yearsNumber,
+    years_text: productsContent.yearsText,
+    years_description: productsContent.yearsDescription,
+    background_image: productsContent.backgroundImage,
+    site_content_id: siteContentId,
+  });
 
+  // Create products
+  if (
+    Array.isArray(productsContent.products) &&
+    productsContent.products.length > 0
+  ) {
+    const lastProduct = await productsCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-  // CREATE PRODUCTS
-  if (Array.isArray(productsContent.products)) {
-    for (
-      let index = 0;
-      index < productsContent.products.length;
-      index++
-    ) {
-      const product =
-        productsContent.products[index];
+    let nextProductId = (lastProduct?.id || 0) + 1;
 
-      await db.query(
-        `
-        INSERT INTO products
-        (
-          section_id,
-          name,
-          image,
-          description,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [
-          sectionId,
-          product.name,
-          product.image,
-          product.description,
-          product.sortOrder ?? index,
-        ]
-      );
-    }
+    const products = productsContent.products.map((product, index) => ({
+      id: nextProductId++,
+      section_id: sectionId,
+      name: product.name,
+      image: product.image,
+      description: product.description,
+      sort_order: product.sortOrder ?? index,
+    }));
+
+    await productsCollection.insertMany(products);
   }
 
-  return getProducts(
-    siteContentId,
-    db
-  );
+  return getProducts(siteContentId);
 };
 
 
 // UPDATE PRODUCTS
-const updateProducts = async (
-  siteContentId,
-  productsContent,
-  db = pool
-) => {
+const updateProducts = async (siteContentId, productsContent) => {
   if (!productsContent) {
-    throw new Error(
-      "Products data is required"
-    );
+    throw new Error("Products data is required");
   }
 
+  const db = getDB();
 
-  // CHECK EXISTING SECTION
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM products_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const sectionCollection = db.collection("products_section");
+  const productsCollection = db.collection("products");
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Products section not found"
-    );
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Products section not found");
   }
 
-  const sectionId =
-    existingRows[0].id;
+  const sectionId = existing.id;
 
-
-  // UPDATE PRODUCTS SECTION
-  await db.query(
-    `
-    UPDATE products_section
-    SET
-      title = ?,
-      years_number = ?,
-      years_text = ?,
-      years_description = ?,
-      background_image = ?
-    WHERE site_content_id = ?
-    `,
-    [
-      productsContent.title,
-      productsContent.yearsNumber,
-      productsContent.yearsText,
-      productsContent.yearsDescription,
-      productsContent.backgroundImage,
-      siteContentId,
-    ]
-  );
-
-
-  // DELETE OLD PRODUCTS
-  await db.query(
-    `
-    DELETE FROM products
-    WHERE section_id = ?
-    `,
-    [sectionId]
-  );
-
-
-  // INSERT CURRENT PRODUCTS
-  if (Array.isArray(productsContent.products)) {
-    for (
-      let index = 0;
-      index < productsContent.products.length;
-      index++
-    ) {
-      const product =
-        productsContent.products[index];
-
-      await db.query(
-        `
-        INSERT INTO products
-        (
-          section_id,
-          name,
-          image,
-          description,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [
-          sectionId,
-          product.name,
-          product.image,
-          product.description,
-          product.sortOrder ?? index,
-        ]
-      );
+  // Update products section
+  await sectionCollection.updateOne(
+    { id: sectionId },
+    {
+      $set: {
+        title: productsContent.title,
+        years_number: productsContent.yearsNumber,
+        years_text: productsContent.yearsText,
+        years_description: productsContent.yearsDescription,
+        background_image: productsContent.backgroundImage,
+      },
     }
+  );
+
+  // Delete old products
+  await productsCollection.deleteMany({
+    section_id: sectionId,
+  });
+
+  // Insert current products
+  if (
+    Array.isArray(productsContent.products) &&
+    productsContent.products.length > 0
+  ) {
+    const lastProduct = await productsCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
+
+    let nextProductId = (lastProduct?.id || 0) + 1;
+
+    const products = productsContent.products.map((product, index) => ({
+      id: nextProductId++,
+      section_id: sectionId,
+      name: product.name,
+      image: product.image,
+      description: product.description,
+      sort_order: product.sortOrder ?? index,
+    }));
+
+    await productsCollection.insertMany(products);
   }
 
-  return getProducts(
-    siteContentId,
-    db
-  );
+  return getProducts(siteContentId);
 };
 
 
 // DELETE PRODUCTS
-const deleteProducts = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteProducts = async (siteContentId) => {
+  const db = getDB();
 
-  // CHECK EXISTING SECTION
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM products_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const sectionCollection = db.collection("products_section");
+  const productsCollection = db.collection("products");
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Products section not found"
-    );
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Products section not found");
   }
 
-  const sectionId =
-    existingRows[0].id;
+  const sectionId = existing.id;
 
+  // Delete products first
+  await productsCollection.deleteMany({
+    section_id: sectionId,
+  });
 
-  // DELETE PRODUCTS FIRST
-  await db.query(
-    `
-    DELETE FROM products
-    WHERE section_id = ?
-    `,
-    [sectionId]
-  );
+  // Delete products section
+  const result = await sectionCollection.deleteOne({
+    site_content_id: siteContentId,
+  });
 
-
-  // DELETE PRODUCTS SECTION
-  const [result] = await db.query(
-    `
-    DELETE FROM products_section
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
-
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Products section not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Products section not found");
   }
 
   return true;

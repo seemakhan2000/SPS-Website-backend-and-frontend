@@ -1,31 +1,54 @@
-const mysql = require("mysql2/promise");
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST ,
-  port: Number(process.env.DB_PORT) ,
-  user: process.env.DB_USER ,
-  password: process.env.DB_PASSWORD  ,
-  database: process.env.DB_NAME ,
+const { MongoClient } = require("mongodb");
 
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+let client;
+let database;
 
 const connectDB = async () => {
   try {
-    const connection = await pool.getConnection();
+    const mongoUrl = process.env.MONGO_URL;
 
-    console.log("DB connected successfully");
+    if (!mongoUrl) {
+      throw new Error("MONGO_URL is missing in .env");
+    }
 
-    connection.release();
+    client = new MongoClient(mongoUrl);
+
+    await client.connect();
+
+    database = client.db(
+      process.env.MONGODB_DATABASE || "sps_enterprise"
+    );
+
+    await database.command({ ping: 1 });
+
+    console.log("MongoDB connected successfully!");
+
+    return database;
   } catch (error) {
-    console.error("MariaDB connection failed:", error.message);
+    console.error("MongoDB connection failed:", error.message);
     throw error;
   }
 };
 
+const getDB = () => {
+  if (!database) {
+    throw new Error("MongoDB is not connected. Call connectDB first.");
+  }
+
+  return database;
+};
+
+const closeDB = async () => {
+  if (client) {
+    await client.close();
+    client = null;
+    database = null;
+  }
+};
+
 module.exports = {
-  pool,
   connectDB,
+  getDB,
+  closeDB,
 };

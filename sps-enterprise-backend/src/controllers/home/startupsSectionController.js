@@ -1,41 +1,24 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET STARTUPS SECTION
-const getStartupsSection = async (
-  siteContentId,
-  db = pool
-) => {
-  const [rows] = await db.query(
-    `
-    SELECT
-      id,
-      title,
-      subtitle,
-      description,
-      site_content_id
-    FROM startups_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const getStartupsSection = async (siteContentId) => {
+  const db = getDB();
 
-  if (rows.length === 0) {
+  const section = await db.collection("startups_section").findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!section) {
     return null;
   }
 
   return {
-    id: rows[0].id,
-
-    title: rows[0].title,
-
-    subtitle: rows[0].subtitle,
-
-    description: rows[0].description,
-
-    siteContentId:
-      rows[0].site_content_id,
+    id: section.id,
+    title: section.title,
+    subtitle: section.subtitle,
+    description: section.description,
+    siteContentId: section.site_content_id,
   };
 };
 
@@ -43,154 +26,104 @@ const getStartupsSection = async (
 // CREATE STARTUPS SECTION
 const createStartupsSection = async (
   siteContentId,
-  startupsSection,
-  db = pool
+  startupsSection
 ) => {
   if (!startupsSection) {
-    throw new Error(
-      "Startups Section data is required"
-    );
+    throw new Error("Startups Section data is required");
   }
 
+  const db = getDB();
+  const collection = db.collection("startups_section");
 
-  // CHECK EXISTING SECTION
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM startups_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  // Check existing section
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Startups Section already exists"
-    );
+  if (existing) {
+    throw new Error("Startups Section already exists");
   }
 
+  // Generate section ID
+  const lastSection = await collection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  // CREATE SECTION
-  await db.query(
-    `
-    INSERT INTO startups_section
-    (
-      title,
-      subtitle,
-      description,
-      site_content_id
-    )
-    VALUES (?, ?, ?, ?)
-    `,
-    [
-      startupsSection.title,
-      startupsSection.subtitle,
-      startupsSection.description,
-      siteContentId,
-    ]
-  );
+  const sectionId = (lastSection?.id || 0) + 1;
 
-  return getStartupsSection(
-    siteContentId,
-    db
-  );
+  // Create section
+  await collection.insertOne({
+    id: sectionId,
+    title: startupsSection.title,
+    subtitle: startupsSection.subtitle,
+    description: startupsSection.description,
+    site_content_id: siteContentId,
+  });
+
+  return getStartupsSection(siteContentId);
 };
 
 
 // UPDATE STARTUPS SECTION
 const updateStartupsSection = async (
   siteContentId,
-  startupsSection,
-  db = pool
+  startupsSection
 ) => {
   if (!startupsSection) {
-    throw new Error(
-      "Startups Section data is required"
-    );
+    throw new Error("Startups Section data is required");
   }
 
+  const db = getDB();
+  const collection = db.collection("startups_section");
 
-  // CHECK EXISTING SECTION
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM startups_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  // Check existing section
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Startups Section record not found"
-    );
+  if (!existing) {
+    throw new Error("Startups Section record not found");
   }
 
-
-  // UPDATE SECTION
-  await db.query(
-    `
-    UPDATE startups_section
-    SET
-      title = ?,
-      subtitle = ?,
-      description = ?
-    WHERE site_content_id = ?
-    `,
-    [
-      startupsSection.title,
-      startupsSection.subtitle,
-      startupsSection.description,
-      siteContentId,
-    ]
+  // Update section
+  await collection.updateOne(
+    { site_content_id: siteContentId },
+    {
+      $set: {
+        title: startupsSection.title,
+        subtitle: startupsSection.subtitle,
+        description: startupsSection.description,
+      },
+    }
   );
 
-  return getStartupsSection(
-    siteContentId,
-    db
-  );
+  return getStartupsSection(siteContentId);
 };
 
 
 // DELETE STARTUPS SECTION
-const deleteStartupsSection = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteStartupsSection = async (siteContentId) => {
+  const db = getDB();
+  const collection = db.collection("startups_section");
 
-  // CHECK EXISTING SECTION
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM startups_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  // Check existing section
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Startups Section record not found"
-    );
+  if (!existing) {
+    throw new Error("Startups Section record not found");
   }
 
+  // Delete section
+  const result = await collection.deleteOne({
+    site_content_id: siteContentId,
+  });
 
-  // DELETE SECTION
-  const [result] = await db.query(
-    `
-    DELETE FROM startups_section
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
-
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Startups Section record not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Startups Section record not found");
   }
 
   return true;

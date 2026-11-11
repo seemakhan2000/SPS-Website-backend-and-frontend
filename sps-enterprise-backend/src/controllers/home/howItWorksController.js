@@ -1,61 +1,28 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET HOW IT WORKS
-const getHowItWorks = async (
-  siteContentId,
-  db = pool
-) => {
-  const [howItWorksRows] = await db.query(
-    `
-    SELECT
-      id,
-      heading,
-      description,
-      image,
-      button_text,
-      button_link,
-      specialists_number,
-      specialists_text,
-      clients_number,
-      clients_text,
-      site_content_id
-    FROM how_it_works
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const getHowItWorks = async (siteContentId) => {
+  const db = getDB();
 
-  if (howItWorksRows.length === 0) {
+  const howItWorks = await db.collection("how_it_works").findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!howItWorks) {
     return null;
   }
 
-  const howItWorks = howItWorksRows[0];
+  // Get steps
+  const stepRows = await db
+    .collection("how_it_works_steps")
+    .find({ how_it_works_id: howItWorks.id })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
-
-  // Get Steps
-  const [stepRows] = await db.query(
-    `
-    SELECT
-      id,
-      icon,
-      title,
-      sort_order
-    FROM how_it_works_steps
-    WHERE how_it_works_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [howItWorks.id]
-  );
-
-
-  // Return DB data
   return {
     id: howItWorks.id,
-
     heading: howItWorks.heading,
-
     description: howItWorks.description,
 
     steps: stepRows.map((step) => ({
@@ -66,275 +33,183 @@ const getHowItWorks = async (
     })),
 
     image: howItWorks.image,
-
     buttonText: howItWorks.button_text,
-
     buttonLink: howItWorks.button_link,
-
-    specialistsNumber:
-      howItWorks.specialists_number,
-
-    specialistsText:
-      howItWorks.specialists_text,
-
-    clientsNumber:
-      howItWorks.clients_number,
-
-    clientsText:
-      howItWorks.clients_text,
-
-    siteContentId:
-      howItWorks.site_content_id,
+    specialistsNumber: howItWorks.specialists_number,
+    specialistsText: howItWorks.specialists_text,
+    clientsNumber: howItWorks.clients_number,
+    clientsText: howItWorks.clients_text,
+    siteContentId: howItWorks.site_content_id,
   };
 };
 
 
 // CREATE HOW IT WORKS
-const createHowItWorks = async (
-  siteContentId,
-  howItWorks,
-  db = pool
-) => {
+const createHowItWorks = async (siteContentId, howItWorks) => {
   if (!howItWorks) {
     throw new Error("How It Works data is required");
   }
 
+  const db = getDB();
+
+  const mainCollection = db.collection("how_it_works");
+  const stepsCollection = db.collection("how_it_works_steps");
 
   // Check existing record
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM how_it_works
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const existing = await mainCollection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length > 0) {
+  if (existing) {
     throw new Error("How It Works already exists");
   }
 
+  // Generate main record ID
+  const lastRecord = await mainCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  const howItWorksId = (lastRecord?.id || 0) + 1;
 
   // Insert main record
-  const [result] = await db.query(
-    `
-    INSERT INTO how_it_works
-    (
-      heading,
-      description,
-      image,
-      button_text,
-      button_link,
-      specialists_number,
-      specialists_text,
-      clients_number,
-      clients_text,
-      site_content_id
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      howItWorks.heading,
-      howItWorks.description,
-      howItWorks.image,
-      howItWorks.buttonText,
-      howItWorks.buttonLink,
-      howItWorks.specialistsNumber,
-      howItWorks.specialistsText,
-      howItWorks.clientsNumber,
-      howItWorks.clientsText,
-      siteContentId,
-    ]
-  );
-
-  const howItWorksId = result.insertId;
-
+  await mainCollection.insertOne({
+    id: howItWorksId,
+    heading: howItWorks.heading,
+    description: howItWorks.description,
+    image: howItWorks.image,
+    button_text: howItWorks.buttonText,
+    button_link: howItWorks.buttonLink,
+    specialists_number: howItWorks.specialistsNumber,
+    specialists_text: howItWorks.specialistsText,
+    clients_number: howItWorks.clientsNumber,
+    clients_text: howItWorks.clientsText,
+    site_content_id: siteContentId,
+  });
 
   // Insert steps
-  if (Array.isArray(howItWorks.steps)) {
-    for (
-      let index = 0;
-      index < howItWorks.steps.length;
-      index++
-    ) {
-      const step = howItWorks.steps[index];
+  if (Array.isArray(howItWorks.steps) && howItWorks.steps.length > 0) {
+    const lastStep = await stepsCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-      await db.query(
-        `
-        INSERT INTO how_it_works_steps
-        (
-          how_it_works_id,
-          icon,
-          title,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?)
-        `,
-        [
-          howItWorksId,
-          step.icon,
-          step.title,
-          step.sortOrder ?? index,
-        ]
-      );
-    }
+    let nextStepId = (lastStep?.id || 0) + 1;
+
+    const steps = howItWorks.steps.map((step, index) => ({
+      id: nextStepId++,
+      how_it_works_id: howItWorksId,
+      icon: step.icon,
+      title: step.title,
+      sort_order: step.sortOrder ?? index,
+    }));
+
+    await stepsCollection.insertMany(steps);
   }
 
-  return getHowItWorks(siteContentId, db);
+  return getHowItWorks(siteContentId);
 };
 
 
 // UPDATE HOW IT WORKS
-const updateHowItWorks = async (
-  siteContentId,
-  howItWorks,
-  db = pool
-) => {
+const updateHowItWorks = async (siteContentId, howItWorks) => {
   if (!howItWorks) {
     throw new Error("How It Works data is required");
   }
 
+  const db = getDB();
 
-  // Check existing record
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM how_it_works
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const mainCollection = db.collection("how_it_works");
+  const stepsCollection = db.collection("how_it_works_steps");
 
-  if (existingRows.length === 0) {
+  const existing = await mainCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
     throw new Error("How It Works record not found");
   }
 
-  const howItWorksId = existingRows[0].id;
-
+  const howItWorksId = existing.id;
 
   // Update main record
-  await db.query(
-    `
-    UPDATE how_it_works
-    SET
-      heading = ?,
-      description = ?,
-      image = ?,
-      button_text = ?,
-      button_link = ?,
-      specialists_number = ?,
-      specialists_text = ?,
-      clients_number = ?,
-      clients_text = ?
-    WHERE site_content_id = ?
-    `,
-    [
-      howItWorks.heading,
-      howItWorks.description,
-      howItWorks.image,
-      howItWorks.buttonText,
-      howItWorks.buttonLink,
-      howItWorks.specialistsNumber,
-      howItWorks.specialistsText,
-      howItWorks.clientsNumber,
-      howItWorks.clientsText,
-      siteContentId,
-    ]
+  await mainCollection.updateOne(
+    { id: howItWorksId },
+    {
+      $set: {
+        heading: howItWorks.heading,
+        description: howItWorks.description,
+        image: howItWorks.image,
+        button_text: howItWorks.buttonText,
+        button_link: howItWorks.buttonLink,
+        specialists_number: howItWorks.specialistsNumber,
+        specialists_text: howItWorks.specialistsText,
+        clients_number: howItWorks.clientsNumber,
+        clients_text: howItWorks.clientsText,
+      },
+    }
   );
-
 
   // Remove existing steps
-  await db.query(
-    `
-    DELETE FROM how_it_works_steps
-    WHERE how_it_works_id = ?
-    `,
-    [howItWorksId]
-  );
+  await stepsCollection.deleteMany({
+    how_it_works_id: howItWorksId,
+  });
 
+  // Insert updated steps
+  if (Array.isArray(howItWorks.steps) && howItWorks.steps.length > 0) {
+    const lastStep = await stepsCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-  // Insert current steps
-  if (Array.isArray(howItWorks.steps)) {
-    for (
-      let index = 0;
-      index < howItWorks.steps.length;
-      index++
-    ) {
-      const step = howItWorks.steps[index];
+    let nextStepId = (lastStep?.id || 0) + 1;
 
-      await db.query(
-        `
-        INSERT INTO how_it_works_steps
-        (
-          how_it_works_id,
-          icon,
-          title,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?)
-        `,
-        [
-          howItWorksId,
-          step.icon,
-          step.title,
-          step.sortOrder ?? index,
-        ]
-      );
-    }
+    const steps = howItWorks.steps.map((step, index) => ({
+      id: nextStepId++,
+      how_it_works_id: howItWorksId,
+      icon: step.icon,
+      title: step.title,
+      sort_order: step.sortOrder ?? index,
+    }));
+
+    await stepsCollection.insertMany(steps);
   }
 
-  return getHowItWorks(siteContentId, db);
+  return getHowItWorks(siteContentId);
 };
 
 
 // DELETE HOW IT WORKS
-const deleteHowItWorks = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteHowItWorks = async (siteContentId) => {
+  const db = getDB();
 
-  // Check existing record
+  const mainCollection = db.collection("how_it_works");
+  const stepsCollection = db.collection("how_it_works_steps");
 
+  const existing = await mainCollection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM how_it_works
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
-
-  if (existingRows.length === 0) {
+  if (!existing) {
     throw new Error("How It Works record not found");
   }
 
-  const howItWorksId = existingRows[0].id;
+  const howItWorksId = existing.id;
 
-
-  // Delete steps first
-  await db.query(
-    `
-    DELETE FROM how_it_works_steps
-    WHERE how_it_works_id = ?
-    `,
-    [howItWorksId]
-  );
-
+  // Delete related steps first
+  await stepsCollection.deleteMany({
+    how_it_works_id: howItWorksId,
+  });
 
   // Delete main record
-  const [result] = await db.query(
-    `
-    DELETE FROM how_it_works
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
+  const result = await mainCollection.deleteOne({
+    site_content_id: siteContentId,
+  });
 
-  if (result.affectedRows === 0) {
+  if (result.deletedCount === 0) {
     throw new Error("How It Works record not found");
   }
 

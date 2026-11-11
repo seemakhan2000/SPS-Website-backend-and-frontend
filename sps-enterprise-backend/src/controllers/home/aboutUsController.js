@@ -1,180 +1,127 @@
 
-const { pool } = require("../../config/db");
-
+const { getDB } = require("../../config/db");
 
 // GET ABOUT US
-const getAboutUs = async (siteContentId, db = pool) => {
-  const [rows] = await db.query(
-    `
-    SELECT
-      id,
-      label,
-      title,
-      description,
-      big_image,
-      small_image,
-      button_text,
-      button_link,
-      site_content_id
-    FROM about_us
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const getAboutUs = async (siteContentId) => {
+  const db = getDB();
 
-  if (rows.length === 0) {
+  const record = await db.collection("about_us").findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!record) {
     return null;
   }
 
   return {
-    id: rows[0].id,
-    label: rows[0].label,
-    title: rows[0].title,
-    description: rows[0].description,
-    bigImage: rows[0].big_image,
-    smallImage: rows[0].small_image,
-    buttonText: rows[0].button_text,
-    buttonLink: rows[0].button_link,
-    siteContentId: rows[0].site_content_id,
+    id: record.id,
+    label: record.label,
+    title: record.title,
+    description: record.description,
+    bigImage: record.big_image,
+    smallImage: record.small_image,
+    buttonText: record.button_text,
+    buttonLink: record.button_link,
+    siteContentId: record.site_content_id,
   };
 };
 
-
 // CREATE ABOUT US
-const createAboutUs = async (
-  siteContentId,
-  aboutUs,
-  db = pool
-) => {
+const createAboutUs = async (siteContentId, aboutUs) => {
   if (!aboutUs) {
     throw new Error("About Us data is required");
   }
 
-  const [existing] = await db.query(
-    `
-    SELECT id
-    FROM about_us
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const db = getDB();
+  const collection = db.collection("about_us");
 
-  if (existing.length > 0) {
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (existing) {
     throw new Error("About Us already exists");
   }
 
-  const [result] = await db.query(
-    `
-    INSERT INTO about_us
-    (
-      label,
-      title,
-      description,
-      big_image,
-      small_image,
-      button_text,
-      button_link,
-      site_content_id
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      aboutUs.label,
-      aboutUs.title,
-      aboutUs.description,
-      aboutUs.bigImage,
-      aboutUs.smallImage,
-      aboutUs.buttonText,
-      aboutUs.buttonLink,
-      siteContentId,
-    ]
-  );
+  const lastRecord = await collection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  const newId = (lastRecord?.id || 0) + 1;
+
+  const newRecord = {
+    id: newId,
+    label: aboutUs.label,
+    title: aboutUs.title,
+    description: aboutUs.description,
+    big_image: aboutUs.bigImage,
+    small_image: aboutUs.smallImage,
+    button_text: aboutUs.buttonText,
+    button_link: aboutUs.buttonLink,
+    site_content_id: siteContentId,
+  };
+
+  await collection.insertOne(newRecord);
 
   return {
-    id: result.insertId,
+    id: newId,
     ...aboutUs,
     siteContentId,
   };
 };
 
-
 // UPDATE ABOUT US
-const updateAboutUs = async (
-  siteContentId,
-  aboutUs,
-  db = pool
-) => {
+const updateAboutUs = async (siteContentId, aboutUs) => {
   if (!aboutUs) {
     throw new Error("About Us data is required");
   }
 
-  const [existing] = await db.query(
-    `
-    SELECT id
-    FROM about_us
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const db = getDB();
+  const collection = db.collection("about_us");
 
-  if (existing.length === 0) {
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
     throw new Error("About Us record not found");
   }
 
-  await db.query(
-    `
-    UPDATE about_us
-    SET
-      label = ?,
-      title = ?,
-      description = ?,
-      big_image = ?,
-      small_image = ?,
-      button_text = ?,
-      button_link = ?
-    WHERE site_content_id = ?
-    `,
-    [
-      aboutUs.label,
-      aboutUs.title,
-      aboutUs.description,
-      aboutUs.bigImage,
-      aboutUs.smallImage,
-      aboutUs.buttonText,
-      aboutUs.buttonLink,
-      siteContentId,
-    ]
+  await collection.updateOne(
+    { site_content_id: siteContentId },
+    {
+      $set: {
+        label: aboutUs.label,
+        title: aboutUs.title,
+        description: aboutUs.description,
+        big_image: aboutUs.bigImage,
+        small_image: aboutUs.smallImage,
+        button_text: aboutUs.buttonText,
+        button_link: aboutUs.buttonLink,
+      },
+    }
   );
 
-  return getAboutUs(siteContentId, db);
+  return getAboutUs(siteContentId);
 };
 
-
 // DELETE ABOUT US
-const deleteAboutUs = async (
-  siteContentId,
-  db = pool
-) => {
-  const [result] = await db.query(
-    `
-    DELETE FROM about_us
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
+const deleteAboutUs = async (siteContentId) => {
+  const db = getDB();
 
-  if (result.affectedRows === 0) {
+  const result = await db.collection("about_us").deleteOne({
+    site_content_id: siteContentId,
+  });
+
+  if (result.deletedCount === 0) {
     throw new Error("About Us record not found");
   }
 
   return true;
 };
 
-
-// EXPORT
 module.exports = {
   getAboutUs,
   createAboutUs,

@@ -1,229 +1,167 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET HERO SLIDES
-const getHeroSlides = async (
-  siteContentId,
-  db = pool
-) => {
-  const [heroRows] = await db.query(
-    `
-    SELECT
-      id,
-      video,
-      title,
-      subtitle,
-      description,
-      button_text,
-      button_link,
-      is_list,
-      site_content_id
-    FROM hero_slides
-    WHERE site_content_id = ?
-    ORDER BY id ASC
-    `,
-    [siteContentId]
-  );
+const getHeroSlides = async (siteContentId) => {
+  const db = getDB();
+
+  const heroRows = await db
+    .collection("hero_slides")
+    .find({ site_content_id: siteContentId })
+    .sort({ id: 1 })
+    .toArray();
 
   return heroRows.map((slide) => ({
     id: slide.id,
-
     video: slide.video,
-
     title: slide.title,
-
     subtitle: slide.subtitle,
 
     description:
       typeof slide.description === "string"
-        ? JSON.parse(slide.description)
+        ? (() => {
+            try {
+              return JSON.parse(slide.description);
+            } catch {
+              return slide.description;
+            }
+          })()
         : slide.description,
 
     buttonText: slide.button_text,
-
     buttonLink: slide.button_link,
-
     isList: Boolean(slide.is_list),
-
-    siteContentId:
-      slide.site_content_id,
+    siteContentId: slide.site_content_id,
   }));
 };
 
 
 // CREATE HERO SLIDES
-const createHeroSlides = async (
-  siteContentId,
-  heroSlides,
-  db = pool
-) => {
-  if (!Array.isArray(heroSlides)) {
-    throw new Error(
-      "Hero slides data is required"
-    );
-  }
-
-
-  // Check if hero slides already exist
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM hero_slides
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
-
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Hero slides already exist"
-    );
-  }
-
-
-  // Insert hero slides
-  for (const slide of heroSlides) {
-    await db.query(
-      `
-      INSERT INTO hero_slides
-      (
-        video,
-        title,
-        subtitle,
-        description,
-        button_text,
-        button_link,
-        is_list,
-        site_content_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        slide.video,
-        slide.title,
-        slide.subtitle,
-        JSON.stringify(slide.description),
-        slide.buttonText,
-        slide.buttonLink,
-        Boolean(slide.isList),
-        siteContentId,
-      ]
-    );
-  }
-
-
-  // Return created DB data
-  return getHeroSlides(
-    siteContentId,
-    db
-  );
-};
-
-// UPDATE HERO SLIDES
-const updateHeroSlides = async (
-  siteContentId,
-  heroSlides,
-  db = pool
-) => {
+const createHeroSlides = async (siteContentId, heroSlides) => {
   if (!Array.isArray(heroSlides)) {
     throw new Error("Hero slides data is required");
   }
 
-  const [existingRows] = await db.query(
-    `
-    SELECT id
-    FROM hero_slides
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
+  const db = getDB();
+  const collection = db.collection("hero_slides");
+
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (existing) {
+    throw new Error("Hero slides already exist");
+  }
+
+  if (heroSlides.length === 0) {
+    return [];
+  }
+
+  // Generate IDs while preserving existing numeric IDs
+  const lastRecord = await collection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
+
+  let nextId = (lastRecord?.id || 0) + 1;
+
+  const documents = heroSlides.map((slide) => ({
+    id: nextId++,
+    video: slide.video,
+    title: slide.title,
+    subtitle: slide.subtitle,
+    description: slide.description,
+    button_text: slide.buttonText,
+    button_link: slide.buttonLink,
+    is_list: Boolean(slide.isList),
+    site_content_id: siteContentId,
+  }));
+
+  await collection.insertMany(documents);
+
+  return getHeroSlides(siteContentId);
+};
+
+
+// UPDATE HERO SLIDES
+const updateHeroSlides = async (siteContentId, heroSlides) => {
+  if (!Array.isArray(heroSlides)) {
+    throw new Error("Hero slides data is required");
+  }
+
+  const db = getDB();
+  const collection = db.collection("hero_slides");
+
+  const existingRows = await collection
+    .find({ site_content_id: siteContentId })
+    .toArray();
 
   if (existingRows.length === 0) {
     throw new Error("Hero slides not found");
   }
 
+  // Validate all slide IDs before updating
   for (const slide of heroSlides) {
     if (!slide.id) {
       throw new Error("Hero slide ID is required");
     }
 
-    const [result] = await db.query(
-      `
-      UPDATE hero_slides
-      SET
-        video = ?,
-        title = ?,
-        subtitle = ?,
-        description = ?,
-        button_text = ?,
-        button_link = ?,
-        is_list = ?
-      WHERE id = ?
-        AND site_content_id = ?
-      `,
-      [
-        slide.video,
-        slide.title,
-        slide.subtitle,
-        JSON.stringify(slide.description),
-        slide.buttonText,
-        slide.buttonLink,
-        Boolean(slide.isList),
-        slide.id,
-        siteContentId,
-      ]
+    const existingSlide = existingRows.find(
+      (item) => item.id === slide.id
     );
 
-    if (result.affectedRows === 0) {
+    if (!existingSlide) {
       throw new Error(
         `Hero slide with ID ${slide.id} not found`
       );
     }
   }
 
-  return getHeroSlides(siteContentId, db);
-};
-
-// DELETE HERO SLIDES
-const deleteHeroSlides = async (
-  siteContentId,
-  db = pool
-) => {
-
-  // Check existing hero slides
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM hero_slides
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
-
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Hero slides not found"
+  // Update each slide
+  for (const slide of heroSlides) {
+    await collection.updateOne(
+      {
+        id: slide.id,
+        site_content_id: siteContentId,
+      },
+      {
+        $set: {
+          video: slide.video,
+          title: slide.title,
+          subtitle: slide.subtitle,
+          description: slide.description,
+          button_text: slide.buttonText,
+          button_link: slide.buttonLink,
+          is_list: Boolean(slide.isList),
+        },
+      }
     );
   }
 
+  return getHeroSlides(siteContentId);
+};
 
-  // Delete all hero slides
-  const [result] = await db.query(
-    `
-    DELETE FROM hero_slides
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
 
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Hero slides not found"
-    );
+// DELETE HERO SLIDES
+const deleteHeroSlides = async (siteContentId) => {
+  const db = getDB();
+  const collection = db.collection("hero_slides");
+
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Hero slides not found");
+  }
+
+  const result = await collection.deleteMany({
+    site_content_id: siteContentId,
+  });
+
+  if (result.deletedCount === 0) {
+    throw new Error("Hero slides not found");
   }
 
   return true;

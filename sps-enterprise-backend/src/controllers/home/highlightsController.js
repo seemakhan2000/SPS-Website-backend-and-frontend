@@ -1,207 +1,120 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET HIGHLIGHTS
-const getHighlights = async (
-  siteContentId,
-  db = pool
-) => {
-  const [rows] = await db.query(
-    `
-    SELECT
-      id,
-      image,
-      alt,
-      title,
-      description,
-      site_content_id
-    FROM highlights
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+const getHighlights = async (siteContentId) => {
+  const db = getDB();
 
-  // No DB record
-  if (rows.length === 0) {
+  const record = await db.collection("highlights").findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!record) {
     return null;
   }
 
   return {
-    id: rows[0].id,
-    image: rows[0].image,
-    alt: rows[0].alt,
-    title: rows[0].title,
-    description: rows[0].description,
-    siteContentId: rows[0].site_content_id,
+    id: record.id,
+    image: record.image,
+    alt: record.alt,
+    title: record.title,
+    description: record.description,
+    siteContentId: record.site_content_id,
   };
 };
 
 
 // CREATE HIGHLIGHTS
-const createHighlights = async (
-  siteContentId,
-  highlights,
-  db = pool
-) => {
+const createHighlights = async (siteContentId, highlights) => {
   if (!highlights) {
-    throw new Error(
-      "Highlights data is required"
-    );
+    throw new Error("Highlights data is required");
   }
 
+  const db = getDB();
+  const collection = db.collection("highlights");
 
-  // Check existing record
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM highlights
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Highlights already exists"
-    );
+  if (existing) {
+    throw new Error("Highlights already exists");
   }
 
+  // Generate next numeric ID
+  const lastRecord = await collection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  // Create highlights
-  await db.query(
-    `
-    INSERT INTO highlights
-    (
-      image,
-      alt,
-      title,
-      description,
-      site_content_id
-    )
-    VALUES (?, ?, ?, ?, ?)
-    `,
-    [
-      highlights.image,
-      highlights.alt,
-      highlights.title,
-      highlights.description,
-      siteContentId,
-    ]
-  );
+  const newId = (lastRecord?.id || 0) + 1;
 
+  await collection.insertOne({
+    id: newId,
+    image: highlights.image,
+    alt: highlights.alt,
+    title: highlights.title,
+    description: highlights.description,
+    site_content_id: siteContentId,
+  });
 
-  // Return created DB data
-  return getHighlights(
-    siteContentId,
-    db
-  );
+  return getHighlights(siteContentId);
 };
 
 
 // UPDATE HIGHLIGHTS
-const updateHighlights = async (
-  siteContentId,
-  highlights,
-  db = pool
-) => {
+const updateHighlights = async (siteContentId, highlights) => {
   if (!highlights) {
-    throw new Error(
-      "Highlights data is required"
-    );
+    throw new Error("Highlights data is required");
   }
 
+  const db = getDB();
+  const collection = db.collection("highlights");
 
-  // Check existing record
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM highlights
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-
-  // Do NOT automatically create
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Highlights record not found"
-    );
+  if (!existing) {
+    throw new Error("Highlights record not found");
   }
 
-
-  // Update DB
-  await db.query(
-    `
-    UPDATE highlights
-    SET
-      image = ?,
-      alt = ?,
-      title = ?,
-      description = ?
-    WHERE site_content_id = ?
-    `,
-    [
-      highlights.image,
-      highlights.alt,
-      highlights.title,
-      highlights.description,
-      siteContentId,
-    ]
+  await collection.updateOne(
+    { site_content_id: siteContentId },
+    {
+      $set: {
+        image: highlights.image,
+        alt: highlights.alt,
+        title: highlights.title,
+        description: highlights.description,
+      },
+    }
   );
 
-
-  // Return updated DB data
-  return getHighlights(
-    siteContentId,
-    db
-  );
+  return getHighlights(siteContentId);
 };
 
 
 // DELETE HIGHLIGHTS
-const deleteHighlights = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteHighlights = async (siteContentId) => {
+  const db = getDB();
+  const collection = db.collection("highlights");
 
-  // Check existing record
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM highlights
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const existing = await collection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Highlights record not found"
-    );
+  if (!existing) {
+    throw new Error("Highlights record not found");
   }
 
+  const result = await collection.deleteOne({
+    site_content_id: siteContentId,
+  });
 
-  // Delete DB record
-  const [result] = await db.query(
-    `
-    DELETE FROM highlights
-    WHERE site_content_id = ?
-    `,
-    [siteContentId]
-  );
-
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Highlights record not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Highlights record not found");
   }
 
   return true;

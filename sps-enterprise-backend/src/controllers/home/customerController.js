@@ -1,151 +1,74 @@
-const { pool } = require("../../config/db");
 
+const { getDB } = require("../../config/db");
 
 // GET CUSTOMERS
-const getCustomers = async (
-  siteContentId,
-  db = pool
-) => {
+const getCustomers = async (siteContentId) => {
+  const db = getDB();
 
-  // Get customer section
-  const [sectionRows] = await db.query(
-    `
-    SELECT
-      id,
-      site_content_id,
-      heading_line1,
-      heading_line2,
-      heading_line3,
-      main_image,
-      deployment_number,
-      deployment_text
-    FROM customers_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const section = await db.collection("customers_section").findOne({
+    site_content_id: siteContentId,
+  });
 
-  // No DB record
-  if (sectionRows.length === 0) {
+  if (!section) {
     return null;
   }
 
-  const section = sectionRows[0];
-
-
   // Get testimonial
-  const [testimonialRows] = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      rating,
-      message,
-      image
-    FROM customer_testimonial
-    WHERE section_id = ?
-    LIMIT 1
-    `,
-    [section.id]
-  );
+  const testimonialRecord = await db
+    .collection("customer_testimonial")
+    .findOne({ section_id: section.id });
 
-  const testimonial =
-    testimonialRows.length > 0
-      ? {
-        id: testimonialRows[0].id,
-        name: testimonialRows[0].name,
-        rating: Number(
-          testimonialRows[0].rating
-        ),
-        message:
-          testimonialRows[0].message,
-        image: testimonialRows[0].image,
+  const testimonial = testimonialRecord
+    ? {
+        id: testimonialRecord.id,
+        name: testimonialRecord.name,
+        rating: Number(testimonialRecord.rating),
+        message: testimonialRecord.message,
+        image: testimonialRecord.image,
       }
-      : null;
-
+    : null;
 
   // Get deployment avatars
-  const [avatarRows] = await db.query(
-    `
-    SELECT
-      id,
-      image,
-      sort_order
-    FROM customer_deployment_avatars
-    WHERE section_id = ?
-    ORDER BY sort_order ASC, id ASC
-    `,
-    [section.id]
-  );
-
+  const avatarRows = await db
+    .collection("customer_deployment_avatars")
+    .find({ section_id: section.id })
+    .sort({ sort_order: 1, id: 1 })
+    .toArray();
 
   // Get impact
-  const [impactRows] = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      role,
-      title,
-      description,
-      image
-    FROM customer_impact
-    WHERE section_id = ?
-    LIMIT 1
-    `,
-    [section.id]
-  );
+  const impactRecord = await db
+    .collection("customer_impact")
+    .findOne({ section_id: section.id });
 
-  const impact =
-    impactRows.length > 0
-      ? {
-        id: impactRows[0].id,
-        name: impactRows[0].name,
-        role: impactRows[0].role,
-        title: impactRows[0].title,
-        description:
-          impactRows[0].description,
-        image: impactRows[0].image,
+  const impact = impactRecord
+    ? {
+        id: impactRecord.id,
+        name: impactRecord.name,
+        role: impactRecord.role,
+        title: impactRecord.title,
+        description: impactRecord.description,
+        image: impactRecord.image,
       }
-      : null;
+    : null;
 
-
-  // Return only DB data
   return {
     id: section.id,
-    siteContentId:
-      section.site_content_id,
-
-    headingLine1:
-      section.heading_line1,
-
-    headingLine2:
-      section.heading_line2,
-
-    headingLine3:
-      section.heading_line3,
-
-    mainImage:
-      section.main_image,
+    siteContentId: section.site_content_id,
+    headingLine1: section.heading_line1,
+    headingLine2: section.heading_line2,
+    headingLine3: section.heading_line3,
+    mainImage: section.main_image,
 
     testimonial,
 
     deployment: {
-      number:
-        section.deployment_number,
-
-      text:
-        section.deployment_text,
-
-      avatars: avatarRows.map(
-        (avatar) => ({
-          id: avatar.id,
-          image: avatar.image,
-          sortOrder:
-            avatar.sort_order,
-        })
-      ),
+      number: section.deployment_number,
+      text: section.deployment_text,
+      avatars: avatarRows.map((avatar) => ({
+        id: avatar.id,
+        image: avatar.image,
+        sortOrder: avatar.sort_order,
+      })),
     },
 
     impact,
@@ -154,473 +77,302 @@ const getCustomers = async (
 
 
 // CREATE CUSTOMERS
-const createCustomers = async (
-  siteContentId,
-  customersContent,
-  db = pool
-) => {
+const createCustomers = async (siteContentId, customersContent) => {
   if (!customersContent) {
-    throw new Error(
-      "Customers data is required"
-    );
+    throw new Error("Customers data is required");
   }
 
+  const db = getDB();
 
-  // Check existing customer section
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM customers_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const sectionCollection = db.collection("customers_section");
+  const testimonialCollection = db.collection("customer_testimonial");
+  const avatarCollection = db.collection("customer_deployment_avatars");
+  const impactCollection = db.collection("customer_impact");
 
-  if (existingRows.length > 0) {
-    throw new Error(
-      "Customers section already exists"
-    );
+  // Check existing section
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (existing) {
+    throw new Error("Customers section already exists");
   }
 
+  // Generate section ID
+  const lastSection = await sectionCollection
+    .find({})
+    .sort({ id: -1 })
+    .limit(1)
+    .next();
 
-  // Create customer section
-  const [sectionResult] =
-    await db.query(
-      `
-      INSERT INTO customers_section
-      (
-        site_content_id,
-        heading_line1,
-        heading_line2,
-        heading_line3,
-        main_image,
-        deployment_number,
-        deployment_text
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        siteContentId,
-        customersContent.headingLine1,
-        customersContent.headingLine2,
-        customersContent.headingLine3,
-        customersContent.mainImage,
-        customersContent.deployment?.number,
-        customersContent.deployment?.text,
-      ]
-    );
+  const sectionId = (lastSection?.id || 0) + 1;
 
-  const sectionId =
-    sectionResult.insertId;
+  // Save customer section
+  await sectionCollection.insertOne({
+    id: sectionId,
+    site_content_id: siteContentId,
+    heading_line1: customersContent.headingLine1,
+    heading_line2: customersContent.headingLine2,
+    heading_line3: customersContent.headingLine3,
+    main_image: customersContent.mainImage,
+    deployment_number: customersContent.deployment?.number,
+    deployment_text: customersContent.deployment?.text,
+  });
 
-
-  // Create testimonial
+  // Save testimonial
   if (customersContent.testimonial) {
-    await db.query(
-      `
-      INSERT INTO customer_testimonial
-      (
-        section_id,
-        name,
-        rating,
-        message,
-        image
-      )
-      VALUES (?, ?, ?, ?, ?)
-      `,
-      [
-        sectionId,
-        customersContent.testimonial.name,
-        customersContent.testimonial.rating,
-        customersContent.testimonial.message,
-        customersContent.testimonial.image,
-      ]
-    );
+    const lastTestimonial = await testimonialCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
+
+    const testimonialId = (lastTestimonial?.id || 0) + 1;
+
+    await testimonialCollection.insertOne({
+      id: testimonialId,
+      section_id: sectionId,
+      name: customersContent.testimonial.name,
+      rating: customersContent.testimonial.rating,
+      message: customersContent.testimonial.message,
+      image: customersContent.testimonial.image,
+    });
   }
 
-
-  // Create deployment avatars
+  // Save deployment avatars
   if (
-    Array.isArray(
-      customersContent.deployment?.avatars
-    )
+    Array.isArray(customersContent.deployment?.avatars) &&
+    customersContent.deployment.avatars.length > 0
   ) {
-    for (
-      let index = 0;
-      index <
-      customersContent.deployment.avatars.length;
-      index++
-    ) {
-      const avatar =
-        customersContent.deployment.avatars[index];
+    const lastAvatar = await avatarCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-      await db.query(
-        `
-        INSERT INTO customer_deployment_avatars
-        (
-          section_id,
-          image,
-          sort_order
-        )
-        VALUES (?, ?, ?)
-        `,
-        [
-          sectionId,
-          avatar.image,
-          avatar.sortOrder ?? index,
-        ]
-      );
-    }
-  }
+    let nextAvatarId = (lastAvatar?.id || 0) + 1;
 
-
-  // Create impact
-  if (customersContent.impact) {
-    await db.query(
-      `
-      INSERT INTO customer_impact
-      (
-        section_id,
-        name,
-        role,
-        title,
-        description,
-        image
-      )
-      VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      [
-        sectionId,
-        customersContent.impact.name,
-        customersContent.impact.role,
-        customersContent.impact.title,
-        customersContent.impact.description,
-        customersContent.impact.image,
-      ]
+    const avatars = customersContent.deployment.avatars.map(
+      (avatar, index) => ({
+        id: nextAvatarId++,
+        section_id: sectionId,
+        image: avatar.image,
+        sort_order: avatar.sortOrder ?? index,
+      })
     );
+
+    await avatarCollection.insertMany(avatars);
   }
 
+  // Save impact
+  if (customersContent.impact) {
+    const lastImpact = await impactCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-  // Return created DB data
-  return getCustomers(
-    siteContentId,
-    db
-  );
+    const impactId = (lastImpact?.id || 0) + 1;
+
+    await impactCollection.insertOne({
+      id: impactId,
+      section_id: sectionId,
+      name: customersContent.impact.name,
+      role: customersContent.impact.role,
+      title: customersContent.impact.title,
+      description: customersContent.impact.description,
+      image: customersContent.impact.image,
+    });
+  }
+
+  return getCustomers(siteContentId);
 };
 
 
 // UPDATE CUSTOMERS
-const updateCustomers = async (
-  siteContentId,
-  customersContent,
-  db = pool
-) => {
+const updateCustomers = async (siteContentId, customersContent) => {
   if (!customersContent) {
-    throw new Error(
-      "Customers data is required"
-    );
+    throw new Error("Customers data is required");
   }
 
+  const db = getDB();
 
-  // Find existing customer section
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM customers_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const sectionCollection = db.collection("customers_section");
+  const testimonialCollection = db.collection("customer_testimonial");
+  const avatarCollection = db.collection("customer_deployment_avatars");
+  const impactCollection = db.collection("customer_impact");
 
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
 
-  // Do NOT create automatically
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Customers section not found"
-    );
+  if (!existing) {
+    throw new Error("Customers section not found");
   }
 
-  const sectionId =
-    existingRows[0].id;
-
+  const sectionId = existing.id;
 
   // Update customer section
-  await db.query(
-    `
-    UPDATE customers_section
-    SET
-      heading_line1 = ?,
-      heading_line2 = ?,
-      heading_line3 = ?,
-      main_image = ?,
-      deployment_number = ?,
-      deployment_text = ?
-    WHERE id = ?
-    `,
-    [
-      customersContent.headingLine1,
-      customersContent.headingLine2,
-      customersContent.headingLine3,
-      customersContent.mainImage,
-      customersContent.deployment?.number,
-      customersContent.deployment?.text,
-      sectionId,
-    ]
+  await sectionCollection.updateOne(
+    { id: sectionId },
+    {
+      $set: {
+        heading_line1: customersContent.headingLine1,
+        heading_line2: customersContent.headingLine2,
+        heading_line3: customersContent.headingLine3,
+        main_image: customersContent.mainImage,
+        deployment_number: customersContent.deployment?.number,
+        deployment_text: customersContent.deployment?.text,
+      },
+    }
   );
-
 
   // Update testimonial
-  const [existingTestimonial] =
-    await db.query(
-      `
-      SELECT
-        id
-      FROM customer_testimonial
-      WHERE section_id = ?
-      LIMIT 1
-      `,
-      [sectionId]
-    );
+  if (customersContent.testimonial) {
+    const testimonial = await testimonialCollection.findOne({
+      section_id: sectionId,
+    });
 
-  if (
-    customersContent.testimonial
-  ) {
-    if (
-      existingTestimonial.length > 0
-    ) {
-      await db.query(
-        `
-        UPDATE customer_testimonial
-        SET
-          name = ?,
-          rating = ?,
-          message = ?,
-          image = ?
-        WHERE section_id = ?
-        `,
-        [
-          customersContent.testimonial.name,
-          customersContent.testimonial.rating,
-          customersContent.testimonial.message,
-          customersContent.testimonial.image,
-          sectionId,
-        ]
+    if (testimonial) {
+      await testimonialCollection.updateOne(
+        { id: testimonial.id },
+        {
+          $set: {
+            name: customersContent.testimonial.name,
+            rating: customersContent.testimonial.rating,
+            message: customersContent.testimonial.message,
+            image: customersContent.testimonial.image,
+          },
+        }
       );
     } else {
-      await db.query(
-        `
-        INSERT INTO customer_testimonial
-        (
-          section_id,
-          name,
-          rating,
-          message,
-          image
-        )
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [
-          sectionId,
-          customersContent.testimonial.name,
-          customersContent.testimonial.rating,
-          customersContent.testimonial.message,
-          customersContent.testimonial.image,
-        ]
-      );
+      const lastTestimonial = await testimonialCollection
+        .find({})
+        .sort({ id: -1 })
+        .limit(1)
+        .next();
+
+      await testimonialCollection.insertOne({
+        id: (lastTestimonial?.id || 0) + 1,
+        section_id: sectionId,
+        name: customersContent.testimonial.name,
+        rating: customersContent.testimonial.rating,
+        message: customersContent.testimonial.message,
+        image: customersContent.testimonial.image,
+      });
     }
   }
-
 
   // Replace deployment avatars
-  await db.query(
-    `
-    DELETE FROM customer_deployment_avatars
-    WHERE section_id = ?
-    `,
-    [sectionId]
-  );
+  await avatarCollection.deleteMany({
+    section_id: sectionId,
+  });
 
   if (
-    Array.isArray(
-      customersContent.deployment?.avatars
-    )
+    Array.isArray(customersContent.deployment?.avatars) &&
+    customersContent.deployment.avatars.length > 0
   ) {
-    for (
-      let index = 0;
-      index <
-      customersContent.deployment.avatars.length;
-      index++
-    ) {
-      const avatar =
-        customersContent.deployment.avatars[index];
+    const lastAvatar = await avatarCollection
+      .find({})
+      .sort({ id: -1 })
+      .limit(1)
+      .next();
 
-      await db.query(
-        `
-        INSERT INTO customer_deployment_avatars
-        (
-          section_id,
-          image,
-          sort_order
-        )
-        VALUES (?, ?, ?)
-        `,
-        [
-          sectionId,
-          avatar.image,
-          avatar.sortOrder ?? index,
-        ]
-      );
-    }
-  }
+    let nextAvatarId = (lastAvatar?.id || 0) + 1;
 
-
-  // Update impact
-  const [existingImpact] =
-    await db.query(
-      `
-      SELECT
-        id
-      FROM customer_impact
-      WHERE section_id = ?
-      LIMIT 1
-      `,
-      [sectionId]
+    const avatars = customersContent.deployment.avatars.map(
+      (avatar, index) => ({
+        id: nextAvatarId++,
+        section_id: sectionId,
+        image: avatar.image,
+        sort_order: avatar.sortOrder ?? index,
+      })
     );
 
+    await avatarCollection.insertMany(avatars);
+  }
+
+  // Update impact
   if (customersContent.impact) {
-    if (
-      existingImpact.length > 0
-    ) {
-      await db.query(
-        `
-        UPDATE customer_impact
-        SET
-          name = ?,
-          role = ?,
-          title = ?,
-          description = ?,
-          image = ?
-        WHERE section_id = ?
-        `,
-        [
-          customersContent.impact.name,
-          customersContent.impact.role,
-          customersContent.impact.title,
-          customersContent.impact.description,
-          customersContent.impact.image,
-          sectionId,
-        ]
+    const impact = await impactCollection.findOne({
+      section_id: sectionId,
+    });
+
+    if (impact) {
+      await impactCollection.updateOne(
+        { id: impact.id },
+        {
+          $set: {
+            name: customersContent.impact.name,
+            role: customersContent.impact.role,
+            title: customersContent.impact.title,
+            description: customersContent.impact.description,
+            image: customersContent.impact.image,
+          },
+        }
       );
     } else {
-      await db.query(
-        `
-        INSERT INTO customer_impact
-        (
-          section_id,
-          name,
-          role,
-          title,
-          description,
-          image
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          sectionId,
-          customersContent.impact.name,
-          customersContent.impact.role,
-          customersContent.impact.title,
-          customersContent.impact.description,
-          customersContent.impact.image,
-        ]
-      );
+      const lastImpact = await impactCollection
+        .find({})
+        .sort({ id: -1 })
+        .limit(1)
+        .next();
+
+      await impactCollection.insertOne({
+        id: (lastImpact?.id || 0) + 1,
+        section_id: sectionId,
+        name: customersContent.impact.name,
+        role: customersContent.impact.role,
+        title: customersContent.impact.title,
+        description: customersContent.impact.description,
+        image: customersContent.impact.image,
+      });
     }
   }
 
-
-  // Return updated DB data
-  return getCustomers(
-    siteContentId,
-    db
-  );
+  return getCustomers(siteContentId);
 };
 
 
 // DELETE CUSTOMERS
-const deleteCustomers = async (
-  siteContentId,
-  db = pool
-) => {
+const deleteCustomers = async (siteContentId) => {
+  const db = getDB();
 
-  // Find customer section
-  const [existingRows] = await db.query(
-    `
-    SELECT
-      id
-    FROM customers_section
-    WHERE site_content_id = ?
-    LIMIT 1
-    `,
-    [siteContentId]
-  );
+  const sectionCollection = db.collection("customers_section");
+  const testimonialCollection = db.collection("customer_testimonial");
+  const avatarCollection = db.collection("customer_deployment_avatars");
+  const impactCollection = db.collection("customer_impact");
 
-  if (existingRows.length === 0) {
-    throw new Error(
-      "Customers section not found"
-    );
+  const existing = await sectionCollection.findOne({
+    site_content_id: siteContentId,
+  });
+
+  if (!existing) {
+    throw new Error("Customers section not found");
   }
 
-  const sectionId =
-    existingRows[0].id;
+  const sectionId = existing.id;
 
+  // Delete related records
+  await testimonialCollection.deleteMany({
+    section_id: sectionId,
+  });
 
-  // Delete testimonial
-  await db.query(
-    `
-    DELETE FROM customer_testimonial
-    WHERE section_id = ?
-    `,
-    [sectionId]
-  );
+  await avatarCollection.deleteMany({
+    section_id: sectionId,
+  });
 
-
-  // Delete deployment avatars
-  await db.query(
-    `
-    DELETE FROM customer_deployment_avatars
-    WHERE section_id = ?
-    `,
-    [sectionId]
-  );
-
-
-  // Delete impact
-  await db.query(
-    `
-    DELETE FROM customer_impact
-    WHERE section_id = ?
-    `,
-    [sectionId]
-  );
-
+  await impactCollection.deleteMany({
+    section_id: sectionId,
+  });
 
   // Delete customer section
-  const [result] = await db.query(
-    `
-    DELETE FROM customers_section
-    WHERE id = ?
-    `,
-    [sectionId]
-  );
+  const result = await sectionCollection.deleteOne({
+    id: sectionId,
+  });
 
-  if (result.affectedRows === 0) {
-    throw new Error(
-      "Customers section not found"
-    );
+  if (result.deletedCount === 0) {
+    throw new Error("Customers section not found");
   }
 
   return true;
