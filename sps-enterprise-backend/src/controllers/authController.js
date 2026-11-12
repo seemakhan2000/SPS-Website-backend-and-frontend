@@ -35,9 +35,7 @@ const login = async (req, res) => {
         role: "admin",
       },
       process.env.JWT_SECRET,
-      {
-        expiresIn: "1d",
-      }
+      { expiresIn: "1d" }
     );
 
     res.cookie("admin_token", token, {
@@ -46,6 +44,7 @@ const login = async (req, res) => {
     });
 
     return res.status(200).json({
+      success: true,
       message: "Login successful",
       admin: {
         name: process.env.ADMIN_NAME || "Admin",
@@ -63,19 +62,12 @@ const login = async (req, res) => {
 };
 
 const logout = async (req, res) => {
-  try {
-    res.clearCookie("admin_token", cookieOptions);
+  res.clearCookie("admin_token", cookieOptions);
 
-    return res.status(200).json({
-      message: "Logout successful",
-    });
-  } catch (error) {
-    console.error("Logout error:", error);
-
-    return res.status(500).json({
-      message: "Logout failed",
-    });
-  }
+  return res.status(200).json({
+    success: true,
+    message: "Logout successful",
+  });
 };
 
 const me = async (req, res) => {

@@ -16,10 +16,8 @@ app.set("trust proxy", 1);
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
-  "https://sps-website-backend-and-frontend-ib.vercel.app",
   "https://sps-website-backend-and-frontend.vercel.app",
-  "https://sps-website-backend-and-frontend-dtk6-901ts8c3q.vercel.app",
-  "https://AAPKA-FRONTEND-DOMAIN.vercel.app",
+  "https://sps-website-backend-and-frontend-ib.vercel.app",
 ];
 
 const isAllowedVercelPreview = (origin) => {
@@ -38,13 +36,28 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Error throw nahi karna, warna 500 aata hai
     return callback(null, false);
   },
+
   credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+  ],
 };
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));

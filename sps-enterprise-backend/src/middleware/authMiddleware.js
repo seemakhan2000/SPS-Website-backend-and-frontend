@@ -2,18 +2,23 @@ const jwt = require("jsonwebtoken");
 
 const protect = (req, res, next) => {
   try {
-    const token = req.cookies.admin_token;
+    const token = req.cookies?.admin_token;
 
     if (!token) {
       return res.status(401).json({
-        message: "Unauthorized",
+        success: false,
+        message: "Unauthorized: Admin token missing",
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
 
     if (decoded.role !== "admin") {
       return res.status(403).json({
+        success: false,
         message: "Admin access required",
       });
     }
@@ -23,6 +28,7 @@ const protect = (req, res, next) => {
     next();
   } catch (error) {
     return res.status(401).json({
+      success: false,
       message: "Invalid or expired token",
     });
   }
